@@ -21,7 +21,7 @@ dependencies {
   paths = ["../pools/pool1", "../pools/pool2"]
 }
 
-inputs = {
+inputs = merge(local.common.provision_inputs, {
   cluster             = local.common.cluster
   region              = local.common.region
   network             = dependency.network.outputs
@@ -30,9 +30,4 @@ inputs = {
   nodes_count         = 3
   enable_metrics      = true
   enable_grafana      = false
-
-  scripts_path         = local.common.scripts_path
-  secrets_file_path    = local.common.secrets_file_path
-  ssh_user             = local.common.ssh_user
-  ssh_private_key_path = local.common.ssh_private_key_path
-}
+})

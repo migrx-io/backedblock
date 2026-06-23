@@ -33,19 +33,32 @@ other components are untouched.
 - AWS credentials with permissions for EC2, IAM, VPC, S3, and SSM
 - An existing VPC and a **public** subnet (for the NAT gateway / bastion)
 - A pre-created **S3 bucket** for Terraform state (set `state_bucket` in `common.hcl`)
-- A local checkout of the **modules repo** for the bootstrap scripts and secrets:
-  ```bash
-  git clone https://github.com/migrx-io/terraform-aws-mgx.git
-  cp terraform-aws-mgx/scripts/secrets.env.example terraform-aws-mgx/scripts/secrets.env  # then edit
-  ```
-  Set `scripts_path` / `secrets_file_path` in `common.hcl` to the **absolute**
-  path of that checkout (Terragrunt runs Terraform from a cache dir, so relative
-  paths won't resolve).
+- Bootstrap scripts + secrets reachable by the nodes. Two transports, selected by
+  `provision_mode` in `common.hcl`:
+  - **`ssm`** (default) — agentless, no bastion, no local checkout. Host a tarball
+    of the modules repo's `scripts/` and store secrets in SSM, then point
+    `scripts_url` / `secrets_ssm_path` at them:
+    ```bash
+    git clone https://github.com/migrx-io/terraform-aws-mgx.git
+    tar czf mgx-scripts.tgz -C terraform-aws-mgx scripts   # upload to scripts_url
+    aws ssm put-parameter --type SecureString --name /mgx/main/secrets \
+      --value file://terraform-aws-mgx/scripts/secrets.env
+    ```
+    Nodes need egress to the SSM endpoints (the NAT gateway covers this).
+  - **`ssh`** — Terraform uploads a **local** checkout via the bastion. Set the
+    **absolute** `scripts_path` / `secrets_file_path` (Terragrunt runs Terraform
+    from a cache dir, so relative paths won't resolve):
+    ```bash
+    git clone https://github.com/migrx-io/terraform-aws-mgx.git
+    cp terraform-aws-mgx/scripts/secrets.env.example terraform-aws-mgx/scripts/secrets.env  # then edit
+    ```
 
 ## Configure
 
 Edit **`common.hcl`** — `vpc_id`, subnet CIDRs, `bastion.vpc_subnet`,
-`state_bucket`, AMIs, and the absolute `scripts_path` / `secrets_file_path`.
+`state_bucket`, AMIs, and the provisioning block (`scripts_url` /
+`secrets_ssm_path` for the default `ssm` mode, or the absolute `scripts_path` /
+`secrets_file_path` if you set `provision_mode = "ssh"`).
 
 > The pools use `raid_level = 0` (EBS cache), which requires a **single AZ** —
 > keep `azs` to one entry. Per-pool sizing lives in `pools/_pool.hcl`; per-pool
