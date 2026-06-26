@@ -133,10 +133,49 @@ with SSH `-J`. All the addresses are in Terraform state — read them with
 ```bash
 # shell on a node, jumping through the bastion
 ssh -J ubuntu@<bastion-public-ip> ubuntu@<node-private-ip>
-
-# port-forward (e.g. Grafana/metrics) through the bastion
-ssh -J ubuntu@<bastion-public-ip> -L 3000:localhost:3000 ubuntu@<node-private-ip>
 ```
+
+### Port-forwarding Grafana (port 3000) through the bastion
+
+Grafana always runs on the **VIP node of the management plane**, and the VIP can
+fail over between mgmt nodes — so don't assume a fixed IP, look it up.
+
+**First identify the VIP mgmt node.** SSH into *any* mgmt node (its IPs are in
+`mgmt`'s `node_private_ips` output above), open the `mgx-core` CLI, and query the
+cluster:
+
+```
+mgx-core:127.0.0.1:nologin> login admin --cluster main --ns main
+Password:
+ logged..
+mgx-core:127.0.0.1:main:main:admin> cluster list
+ [
+    {
+        "cluster": "main",
+        "vip_host": {
+            "ip": "172.31.102.214",          # <- mgmt node currently holding the VIP / Grafana
+            "uuid": "4a11e6fb-d615-53ae-ad1e-fc294f6b7048",
+            "vip": "127.0.0.1"
+        }
+    }
+]
+```
+
+Use the `vip_host.ip` value as `<node-private-ip>` below. (`cluster nodes list`
+shows all nodes and their IPs if you need to cross-reference.) Because the VIP
+can fail over to another mgmt node, re-check `cluster list` if the tunnel stops
+working.
+
+Then forward the port through the bastion to that node:
+
+```bash
+# port-forward Grafana through the bastion to the VIP mgmt node
+ssh -N -J ubuntu@<bastion-public-ip> -L 3000:localhost:3000 ubuntu@<node-private-ip>
+```
+
+Then open <http://localhost:3000>. `-N` keeps the tunnel open without running a
+remote command; Ctrl-C to close it. If local port `3000` is already taken, map a
+different one, e.g. `-L 3001:localhost:3000`.
 
 Default user is `ubuntu` and the key is the one in `key_name` (`common.hcl`).
 Lock `bastion.whitelist_ips` down to your own IP/CIDR before using it for real.

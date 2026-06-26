@@ -75,3 +75,49 @@ ssh -J ubuntu@$BASTION ubuntu@<node-private-ip>
 
 Default SSH user is `ubuntu` and the key is `ssh_private_key_path` in
 `pool/main.tf`.
+
+### Port-forwarding Grafana (port 3000) through the bastion
+
+Grafana runs on a node with no public IP, so tunnel its port `3000` to your
+machine through the bastion. Use SSH `-J` to hop the bastion and `-L` to forward
+the local port.
+
+**First identify the VIP node.** Grafana always runs on the cluster's VIP node,
+and the VIP can move between nodes, so don't assume a fixed IP — look it up.
+SSH into any node (see "Connecting to nodes" above), open the `mgx-core` CLI,
+and query the cluster:
+
+```
+mgx-core:127.0.0.1:nologin> login admin --cluster main --ns main
+Password:
+ logged..
+mgx-core:127.0.0.1:main:main:admin> cluster list
+ [
+    {
+        "cluster": "main",
+        "vip_host": {
+            "ip": "172.31.102.214",          # <- node currently holding the VIP / Grafana
+            "uuid": "4a11e6fb-d615-53ae-ad1e-fc294f6b7048",
+            "vip": "127.0.0.1"
+        }
+    }
+]
+```
+
+Use the `vip_host.ip` value as `<node-private-ip>` below. (`cluster nodes list`
+shows all nodes and their IPs if you need to cross-reference.) Because the VIP
+can fail over to another node, re-check `cluster list` if the tunnel stops
+working.
+
+Then forward the port through the bastion to that node:
+
+```bash
+BASTION=$(cd network && terraform output -raw bastion_public_ip)
+
+ssh -N -J ubuntu@$BASTION -L 3000:localhost:3000 ubuntu@<node-private-ip>
+```
+
+Then open <http://localhost:3000> in your browser. `-N` keeps the tunnel open
+without running a remote command; leave the terminal running and Ctrl-C to close
+it. If local port `3000` is already taken, map a different one, e.g.
+`-L 3001:localhost:3000`.
