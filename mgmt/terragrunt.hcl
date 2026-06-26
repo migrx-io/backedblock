@@ -1,9 +1,15 @@
 include "root" {
-  path = find_in_parent_folders()
+  path = find_in_parent_folders("root.hcl")
 }
 
 locals {
   common = read_terragrunt_config(find_in_parent_folders("common.hcl")).locals
+
+  # Auto-discover every pool unit so adding a pool needs no edit here.
+  pool_dirs = [
+    for f in fileset("${get_terragrunt_dir()}/../pools", "*/terragrunt.hcl") :
+    "../pools/${dirname(f)}"
+  ]
 }
 
 terraform {
@@ -11,14 +17,13 @@ terraform {
 }
 
 dependency "network" {
-  config_path                             = "../network"
-  mock_outputs                            = local.common.network_mock
-  mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
+  config_path = "../network"
 }
 
 # mgmt discovers the pools from SSM at apply time, so it must apply AFTER them.
+# Ordering only (no outputs consumed) — the list is built from the pools/ dir.
 dependencies {
-  paths = ["../pools/pool1", "../pools/pool2"]
+  paths = local.pool_dirs
 }
 
 inputs = merge(local.common.provision_inputs, {

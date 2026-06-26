@@ -18,5 +18,8 @@ locals {
     }]
     enable_metrics = true
     enable_grafana = false
+    # false = each node scrapes only itself and mgmt federates every node (no
+    # node-selection SPOF). Set true only for a standalone pool not on mgmt.
+    cross_peer_scrape = false
   }
 }

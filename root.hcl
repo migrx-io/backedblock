@@ -15,10 +15,10 @@ remote_state {
 
   config = {
     bucket  = local.common.state_bucket
-    key     = "${path_relative_to_include()}/terraform.tfstate"
+    key     = "${path_relative_to_include()}/terraform.tfstate" # network/…, pools/pool1/…
     region  = local.common.region
     encrypt = true
-    # dynamodb_table = "mgx-tf-locks"   # enable for state locking
+    # use_lockfile = true   # S3-native state locking (Terragrunt >= 0.67 / TF >= 1.10)
   }
 }
 

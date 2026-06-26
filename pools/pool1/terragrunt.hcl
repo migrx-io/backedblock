@@ -1,5 +1,5 @@
 include "root" {
-  path = find_in_parent_folders()
+  path = find_in_parent_folders("root.hcl")
 }
 
 locals {
@@ -12,9 +12,7 @@ terraform {
 }
 
 dependency "network" {
-  config_path                             = "../../network"
-  mock_outputs                            = local.common.network_mock
-  mock_outputs_allowed_terraform_commands = ["validate", "plan", "init"]
+  config_path = "../../network"
 }
 
 inputs = merge(local.defaults, local.common.provision_inputs, {
@@ -22,6 +20,7 @@ inputs = merge(local.defaults, local.common.provision_inputs, {
   region    = local.common.region
   network   = dependency.network.outputs
   nodes_ami = local.common.nodes_ami
+  az        = "us-east-1a" # pin this pool to a single AZ (EBS RAID0 cache)
 
   pool_name   = "pool1"
   description = "Pool 1 (EBS RAID0 cache)"
@@ -29,6 +28,6 @@ inputs = merge(local.defaults, local.common.provision_inputs, {
 
   s3_bucket_names        = ["mgxs3storage1"]
   s3_backup_bucket_names = ["mgxs3backup1"]
-  s3_bucket_access_names = ["mgxs3storage2", "mgxs3backup2"] # access pool2's buckets
+  s3_bucket_access_names = ["mgxs3storage2", "mgxs3backup2"] # cross-grant: access pool2's buckets
   s3_force_destroy       = true
 })

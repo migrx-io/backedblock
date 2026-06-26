@@ -1,5 +1,5 @@
 include "root" {
-  path = find_in_parent_folders()
+  path = find_in_parent_folders("root.hcl")
 }
 
 locals {
@@ -17,6 +17,6 @@ inputs = {
   mgmt_subnet_cidrs    = local.common.mgmt_subnet_cidrs
   storage_subnet_cidrs = local.common.storage_subnet_cidrs
   bastion              = local.common.bastion
-  ssh_public_key_path  = local.common.ssh_public_key_path
   key_name             = local.common.key_name
+  ssh_public_key_path  = local.common.ssh_public_key_path
 }
