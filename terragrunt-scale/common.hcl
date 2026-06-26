@@ -35,7 +35,7 @@ locals {
   bastion = {
     enable        = true
     vpc_subnet    = "subnet-06b5191fc3bf0caff" # public subnet (used for the NAT gateway)
-    ami           = "ami-029f1e8b2d0665554"
+    ami           = "ami-0b934fc9a3249ead2"
     instance_type = "t4g.micro"
     whitelist_ips = ["0.0.0.0/0"]
   }

@@ -33,9 +33,9 @@ module "pool" {
   region    = "us-east-1"
   network   = data.terraform_remote_state.network.outputs
 
-  description         = "Single pool (ssh)"
+  description         = "Single pool"
   labels              = "name=pool-1,env=dev"
-  nodes_ami           = "ami-029f1e8b2d0665554" # prebaked mgx AMI (mgx-packer)
+  nodes_ami           = "ami-0b934fc9a3249ead2" # prebaked mgx AMI (mgx-packer)
   nodes_instance_type = "m8gb.xlarge"
   nodes_count         = 3
 
