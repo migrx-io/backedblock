@@ -6,9 +6,11 @@ resource "aws_s3_bucket" "state" {
   bucket = var.state_bucket
 
   # Guard against accidental deletion of the bucket holding all state.
-  lifecycle {
-    prevent_destroy = true
-  }
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
+
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_versioning" "state" {

@@ -29,11 +29,11 @@ locals {
     "172.31.176.0/20", # us-east-1c
   ]
 
-  # This example provisions agentlessly via SSM (see below), so no bastion is
-  # needed. vpc_subnet is kept because the NAT gateway is placed in it (and it
-  # lets you flip enable = true if you ever want SSH access).
+  # Bastion is enabled for SSH access to nodes (jump host). It lives in
+  # vpc_subnet, the public subnet that also hosts the NAT gateway. Lock
+  # whitelist_ips down to your own IP/CIDR for anything beyond a quick test.
   bastion = {
-    enable        = false
+    enable        = true
     vpc_subnet    = "subnet-06b5191fc3bf0caff" # public subnet (used for the NAT gateway)
     ami           = "ami-029f1e8b2d0665554"
     instance_type = "t4g.micro"
@@ -49,10 +49,11 @@ locals {
   nodes_ami = "ami-029f1e8b2d0665554"
 
   # --- provisioning ----------------------------------------------------------
-  # This Terragrunt example always provisions via SSM (agentless, no bastion).
-  # setup-node.sh is driven by SSM Run Command; nodes fetch secrets.env content
-  # from the SSM SecureString at secrets_ssm_path (the NAT gateway gives them the
-  # egress they need to the SSM endpoints).
+  # This Terragrunt example always provisions via SSM (agentless). setup-node.sh
+  # is driven by SSM Run Command; nodes fetch secrets.env content from the SSM
+  # SecureString at secrets_ssm_path (the NAT gateway gives them the egress they
+  # need to the SSM endpoints). The bastion above is NOT used for provisioning —
+  # it's only the SSH jump host for connecting to nodes (see README).
   #
   # (The terraform-aws-mgx modules also support provision_mode = "ssh"; this
   # starter just standardizes on ssm.)

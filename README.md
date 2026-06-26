@@ -18,7 +18,7 @@ It provisions:
 ├── scripts/
 │   └── new-pool.sh         # scaffold a new pools/<name>/ unit
 ├── secrets.env.example
-├── network/                # foundation: subnets, NAT, SG, key pair (bastion off)
+├── network/                # foundation: subnets, NAT, SG, key pair, bastion
 ├── mgmt/                   # management plane (auto-discovers all pools)
 └── pools/
     ├── _pool.hcl           # shared pool defaults (DRY)
@@ -84,11 +84,12 @@ subnet CIDRs, `bastion.vpc_subnet` (used for the NAT gateway), `nodes_ami`, and
 
 Pin `modules_ref` to a released tag when one is available (defaults to `main`).
 
-**Provisioning is SSM here** (agentless, no bastion). setup-node.sh is run
+**Provisioning is SSM here** (agentless). setup-node.sh is run
 via SSM Run Command; nodes fetch the secrets from the SecureString created in
 step 1 and reach the SSM endpoints through the NAT gateway. (The `terraform-aws-mgx`
-modules also support `provision_mode = "ssh"`; this starter standardizes on `ssm`,
-so `bastion.enable` is `false`.)
+modules also support `provision_mode = "ssh"`, which needs the bastion.) The
+bastion (`bastion.enable = true`) is independent of provisioning — it's the SSH
+jump host for **Connecting to nodes** below.
 
 ## Step 3 — deploy (Terragrunt)
 
@@ -116,13 +117,38 @@ the pools' parameters must already exist. `mgmt` then renders the pool list into
 `mgmt` whenever you add or remove a pool** to pick up the change; `run --all`
 handles the ordering on a full apply.
 
+## Connecting to nodes
+
+Nodes have **no public IP**. With `bastion.enable = true` (see `common.hcl`), the
+bastion is a public jump host in `bastion.vpc_subnet`; reach any node through it
+with SSH `-J`. All the addresses are in Terraform state — read them with
+`terragrunt output`, no AWS CLI needed:
+
+```bash
+(cd network     && terragrunt output -raw bastion_public_ip)   # bastion public IP
+(cd mgmt        && terragrunt output node_private_ips)          # mgmt node IPs
+(cd pools/pool1 && terragrunt output node_mgmt_private_ips)     # pool node IPs
+```
+
+```bash
+# shell on a node, jumping through the bastion
+ssh -J ubuntu@<bastion-public-ip> ubuntu@<node-private-ip>
+
+# port-forward (e.g. Grafana/metrics) through the bastion
+ssh -J ubuntu@<bastion-public-ip> -L 3000:localhost:3000 ubuntu@<node-private-ip>
+```
+
+Default user is `ubuntu` and the key is the one in `key_name` (`common.hcl`).
+Lock `bastion.whitelist_ips` down to your own IP/CIDR before using it for real.
+The [`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx) repo
+ships a helper script that wraps these lookups.
+
 ## Day-2
 
 | Task | Action |
 |------|--------|
 | Add a pool | `scripts/new-pool.sh pool3`, (optional) edit its `s3_bucket_access_names`, `(cd pools/pool3 && terragrunt apply)`, then re-apply `mgmt`. No `mgmt` edit needed — it auto-discovers pools. |
 | Remove a pool | `(cd pools/pool3 && terragrunt destroy)`, delete `pools/pool3/`, then re-apply `mgmt`. |
-| Scale a pool | Change `nodes_count` in the pool's `terragrunt.hcl`, `(cd pools/<pool> && terragrunt apply)`. |
 | Tear down all | `terragrunt run --all -- destroy`. |
 
 ## Scaling to many pools
