@@ -1,3 +1,3 @@
 # Must match state_bucket / region in ../common.hcl.
 region       = "us-east-1"
-state_bucket = "mgx-tf-state"
+state_bucket = "mgx-storage-tf-state"

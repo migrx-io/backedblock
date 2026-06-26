@@ -9,7 +9,7 @@ locals {
   # --- global ----------------------------------------------------------------
   region       = "us-east-1"
   cluster      = "main"
-  state_bucket = "mgx-tf-state" # created by the bootstrap/ stack
+  state_bucket = "mgx-storage-tf-state" # created by the bootstrap/ stack
 
   # --- network ---------------------------------------------------------------
   # azs is ONLY for the network: it builds one mgmt + one storage subnet per AZ.
