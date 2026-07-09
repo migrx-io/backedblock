@@ -35,7 +35,7 @@ locals {
   bastion = {
     enable        = true
     vpc_subnet    = "subnet-06b5191fc3bf0caff" # public subnet (used for the NAT gateway)
-    ami           = "ami-0b934fc9a3249ead2"
+    ami           = "ami-07973f503314b36f4" # Canonical Ubuntu 22.04 arm64 (us-east-1)
     instance_type = "t4g.micro"
     whitelist_ips = ["0.0.0.0/0"]
   }
@@ -46,7 +46,7 @@ locals {
   # --- node image ------------------------------------------------------------
   # Prebaked mgx AMI (built by mgx-packer); provisioning runs the baked
   # setup-node.sh in place.
-  nodes_ami = "ami-029f1e8b2d0665554"
+  nodes_ami = "ami-0b0cced66da675bf4"
 
   # --- provisioning ----------------------------------------------------------
   # This Terragrunt example always provisions via SSM (agentless). setup-node.sh

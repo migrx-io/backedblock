@@ -34,5 +34,5 @@ inputs = merge(local.common.provision_inputs, {
   nodes_instance_type = "t4g.xlarge"
   nodes_count         = 3
   enable_metrics      = true
-  enable_grafana      = false
+  enable_grafana      = true
 })
