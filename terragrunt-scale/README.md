@@ -117,6 +117,32 @@ the pools' parameters must already exist. `mgmt` then renders the pool list into
 `mgmt` whenever you add or remove a pool** to pick up the change; `run --all`
 handles the ordering on a full apply.
 
+### Waiting for provisioning to finish
+
+In `ssm` mode, apply only **creates** the provisioning resource (an
+`aws_ssm_association` running `AWS-RunShellScript`). `setup-node.sh` then runs
+**asynchronously** on each node via the SSM agent, so `terragrunt apply` /
+`run --all` returns **before** the node scripts finish. Check the association
+status to know when provisioning is actually done — each node's association is
+named `mgx-<role>-<instance-id>`:
+
+```bash
+# rollup status of every mgx association (Pending / InProgress / Success / Failed)
+aws ssm list-associations --region us-east-1 \
+  --query "Associations[?starts_with(AssociationName, \`mgx-\`)].[AssociationName,Overview.Status]" \
+  --output table
+```
+
+Everything is `Success` → provisioning finished. To inspect a specific node's
+last run (and the setup-node.sh output on failure):
+
+```bash
+# find the association id, then read its latest execution + per-target output
+aws ssm describe-association-executions --region us-east-1 --association-id <id>
+aws ssm describe-association-execution-targets --region us-east-1 \
+  --association-id <id> --execution-id <execution-id>
+```
+
 ## Connecting to nodes
 
 Nodes have **no public IP**. With `bastion.enable = true` (see `common.hcl`), the
