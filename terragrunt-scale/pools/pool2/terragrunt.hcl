@@ -23,11 +23,11 @@ inputs = merge(local.defaults, local.common.provision_inputs, {
   az        = "us-east-1b" # pin this pool to a single AZ (EBS RAID0 cache)
 
   pool_name   = "pool2"
-  description = "Pool 2 (EBS RAID0 cache)"
+  description = "Pool 2"
   labels      = "name=pool-2,env=dev"
 
   s3_bucket_names        = ["mgxs3storage2"]
   s3_backup_bucket_names = ["mgxs3backup2"]
-  s3_bucket_access_names = ["mgxs3storage1", "mgxs3backup1"] # cross-grant: access pool1's buckets
+  s3_bucket_access_names = ["mgxs3backup1"] # cross-grant: access pool1's buckets
   s3_force_destroy       = true
 })

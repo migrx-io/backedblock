@@ -46,7 +46,7 @@ locals {
   # --- node image ------------------------------------------------------------
   # Prebaked mgx AMI (built by mgx-packer); provisioning runs the baked
   # setup-node.sh in place.
-  nodes_ami = "ami-0b0cced66da675bf4"
+  nodes_ami = "ami-0f5d13e7a87be0102"
 
   # --- provisioning ----------------------------------------------------------
   # This Terragrunt example always provisions via SSM (agentless). setup-node.sh
