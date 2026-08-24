@@ -30,12 +30,9 @@ Full docs at **[backedblock.io/docs](https://backedblock.io/docs)**.
 
 ---
 
-## How it fits together
+## How does it work
 
-Two planes, on opposite sides of the Kubernetes boundary. Kubernetes runs the
-CSI driver and nothing else — no capacity, no cache, no part of the data path.
-The storage cluster owns the disks, the buckets and the volumes, and is deployed
-outside Kubernetes (that is what this repo does).
+Two planes, on opposite sides of the Kubernetes boundary:
 
 ```
    Kubernetes cluster                          storage cluster
@@ -54,41 +51,75 @@ outside Kubernetes (that is what this repo does).
                                                        └───────┘
 ```
 
-The **control plane** creates, attaches, expands and snapshots volumes; the
-**data plane** carries blocks. They fail independently — a control plane that is
-down cannot provision anything, but it does not stop a mounted volume from
-serving I/O.
+- **Control plane** — the CSI driver in Kubernetes talking HTTP/S to the storage
+  cluster's management API. It creates, attaches, expands and snapshots volumes.
+  A PVC becomes an API call, and what comes back is the address of a target to
+  connect.
+- **Data plane** — the volume itself: an NVMe-oF/TCP target on the storage
+  nodes, a write-back cache on their local disks, and 1 MiB objects in S3. This
+  is the path a pod's reads and writes actually take.
 
-A write is acknowledged once it is in the cache and flushed to the bucket in the
-background, coalesced into whole 1 MiB blocks. A read is served from the cache if
-the block is resident, and otherwise fetches that one 1 MiB block from S3 first —
-so cache sizing is the tuning knob that matters. See
-[Architecture](https://backedblock.io/docs/architecture) and
-[Caching](https://backedblock.io/docs/caching).
+Details — the components on each plane, the path a block takes, cache
+sizing: **[backedblock.io/docs/architecture](https://backedblock.io/docs/architecture)**.
 
-What Terraform builds, in three stacks:
+---
+
+## How is it deployed
+
+The storage cluster runs on EC2, outside Kubernetes, in **your** AWS account and
+an **existing VPC** — normally the same VPC your workloads already run in, so the
+CSI driver reaches it over private addresses with nothing to open.
+
+Cloud resources created in your AWS account for the storage cluster:
 
 ```
-   AWS account, one VPC
-  ┌────────────────────────────────────────────────────────────────┐
-  │  network stack    subnets per AZ · NAT · S3 VPC endpoint · SG  │
-  │  (once)           SSH key pair · bastion (optional)            │
-  ├────────────────────────────────────────────────────────────────┤
-  │  pool stack       N storage nodes · cache disks · S3 buckets   │
-  │  (one per pool)   NVMe-oF targets · node API :8081             │
-  ├────────────────────────────────────────────────────────────────┤
-  │  mgmt stack       M management nodes · gateway API :8082       │
-  │  (fleets only)    pool registry · Prometheus · Grafana         │
-  └────────────────────────────────────────────────────────────────┘
+ ┌─ AWS account ──────────────────────────────────────────────────────────────┐
+ │                                                                            │
+ │ ┌─ your existing VPC ────────────────────────────────────────────────────┐ │
+ │ │                                                                        │ │
+ │ │    ┌──────────┐    ┌──────────┐    ┌──────────┐         ┌────────────┐ │ │
+ │ │    │ ec2      │    │ ec2      │    │ ec2      │         │ bastion    │ │ │
+ │ │    │ node 1   │    │ node 2   │    │ node 3   │         │ (optional) │ │ │
+ │ │    └┬─┬────┬──┘    └┬─┬────┬──┘    └┬─┬────┬──┘         └────────────┘ │ │
+ │ │     │ │    │        │ │    │        │ │    │            ssh jump host  │ │
+ │ │     │ │ ┌──┴────┐   │ │ ┌──┴────┐   │ │ ┌──┴────┐       public subnet  │ │
+ │ │     │ │ │  EBS  │   │ │ │  EBS  │   │ │ │  EBS  │                      │ │
+ │ │     │ │ │ cache │   │ │ │ cache │   │ │ │ cache │       EBS cache      │ │
+ │ │     │ │ └───────┘   │ │ └───────┘   │ │ └───────┘       disks per node │ │
+ │ │     │ │             │ │             │ │                                │ │
+ │ │ ────┴─┼─────────────┴─┼─────────────┴─┼─ mgmt subnet · HTTP/s API      │ │
+ │ │       │               │               │                                │ │
+ │ │ ──────┴───────────────┴───────────────┴─ data subnet · NVMe-oF/TCP     │ │
+ │ └────────────────────────────────────┬───────────────────────────────────┘ │
+ │                                      │ S3 gateway endpoint                 │
+ │                                      ▼                                     │
+ │            ┌─ S3 ─────────────────────────────────────────────┐            │
+ │            │  ┌──────────────────┐    ┌────────────────────┐  │            │
+ │            │  │ data buckets     │    │ backup buckets     │  │            │
+ │            │  └──────────────────┘    └────────────────────┘  │            │
+ │            └──────────────────────────────────────────────────┘            │
 ```
 
-A **pool** is a set of storage nodes sharing a cache tier and a set of S3
-buckets — where volumes are placed and served from. Pools are independent:
-applying or destroying one leaves the others alone. The **management plane** is
-optional; small installations talk to the pool nodes directly, a fleet gets a
-mgmt stack that discovers every pool, presents one API for all of them and
-federates their metrics. Either way the API is HTTP/S on port `8082`, so the CSI
-driver is configured the same.
+Those EC2 nodes, their cache disks and their buckets are one **pool** — the unit
+volumes are placed in and served from. Terraform creates:
+
+- **Two subnets per AZ, one network each way.** The *mgmt* subnet carries control
+  traffic — the management API on `8082`, ssh, metrics — and the *data* subnet
+  carries volume I/O over NVMe-oF/TCP. Every node has an interface in both.
+- **EC2 storage nodes**, each with its own **cache disks** — EBS volumes striped
+  RAID0, or local NVMe. That cache is what gives a volume its latency, so its
+  size is the number worth getting right before you apply.
+- **Two S3 buckets** — a *data* bucket holding every block as a 1 MiB object,
+  and a *backup* bucket holding snapshots. Both are reached through an **S3
+  gateway endpoint**, so block traffic never leaves the AWS network.
+- A NAT gateway, a security group, and an **optional bastion** in a public subnet
+  you provide — the ssh jump host for nodes that have no public IP.
+
+Pools are independent — applying or destroying one leaves the others alone. A
+fleet adds a **management plane**: its own EC2 nodes that discover every pool,
+present one API for all of them and federate their metrics. Small installations
+skip it and talk to the pool nodes directly; either way the API is the same, so
+the CSI driver is configured the same.
 
 Nodes boot from a **prebaked AMI** with every package and the node scripts
 already in it. Terraform installs no software: it delivers the per-node inputs
