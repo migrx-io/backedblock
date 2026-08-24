@@ -1,6 +1,6 @@
-# mgx-storage starter (Terragrunt)
+# backedblock.io starter (Terragrunt)
 
-A ready-to-edit **golden-path** deployment of [mgx-storage](https://migrx.io) on
+A ready-to-edit **golden-path** deployment of [backedblock.io](https://backedblock.io) on
 AWS, using [Terragrunt](https://terragrunt.gruntwork.io/) over the
 [`migrx-io/terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx) modules.
 
@@ -37,8 +37,9 @@ components are untouched. The modules are pulled straight from GitHub.
 - AWS credentials with permissions for EC2, IAM, VPC, S3, and SSM
 - An existing VPC and a **public** subnet (for the NAT gateway)
 - An **S3 bucket** for Terraform state — created by the `bootstrap/` stack (step 1)
-- A prebaked **mgx AMI** (built by [mgx-packer](https://github.com/migrx-io)) for
-  `nodes_ami` — provisioning runs the baked `setup-node.sh` in place
+- A prebaked **node AMI** for `nodes_ami` — ask
+  [hello@backedblock.io](mailto:hello@backedblock.io) for the current image ID in
+  your region; provisioning runs the baked `setup-node.sh` in place
 - Node secrets (see **Provisioning**)
 
 ## Step 1 — bootstrap (state bucket + secret)

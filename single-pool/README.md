@@ -1,6 +1,6 @@
 # single-pool starter (plain Terraform, SSH)
 
-The **simplest** mgx-storage deployment: one storage pool, no management plane,
+The **simplest** backedblock.io deployment: one storage pool, no management plane,
 no SSM. Plain Terraform (no Terragrunt), and nodes are provisioned over SSH
 through a bastion (`provision_mode = "ssh"`). Good for a single pool, a lab, or
 a proof of concept.
@@ -26,8 +26,9 @@ Two stacks, each its own local state. `pool/` reads `network/`'s outputs from
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.4
 - AWS credentials with permissions for EC2, IAM, VPC, and S3 (no SSM needed)
 - An existing VPC and a **public** subnet (for the bastion + NAT gateway)
-- A prebaked **mgx AMI** (built by [mgx-packer](https://github.com/migrx-io)) for
-  `nodes_ami`
+- A prebaked **node AMI** for `nodes_ami` — ask
+  [hello@backedblock.io](mailto:hello@backedblock.io) for the current image ID in
+  your region
 - An SSH key pair on disk (`~/.ssh/id_rsa` / `~/.ssh/id_rsa.pub` by default)
 
 ## Step 1 — configure
