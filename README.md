@@ -123,21 +123,75 @@ volumes are placed in and served from. Terraform creates:
 - **EC2 storage nodes**, each with its own **cache disks** — EBS volumes striped
   RAID0, or local NVMe. That cache is what gives a volume its latency, so its
   size is the number worth getting right before you apply.
-- **Two S3 buckets** — a *data* bucket holding every block as a 1 MiB object,
-  and a *backup* bucket holding snapshots. Both are reached through an **S3
+- **Data and backup buckets** — the data buckets hold every block as a 1 MiB
+  object, the backup buckets hold snapshots. Both are reached through an **S3
   gateway endpoint**, so block traffic never leaves the AWS network.
 - A NAT gateway, a security group, and an **optional bastion** in a public subnet
   you provide — the ssh jump host for nodes that have no public IP.
 
-Pools are independent — applying or destroying one leaves the others alone. A
-fleet's **management plane** discovers every pool, presents one API for all of
-them and federates their metrics; whether you run one or talk to the pool nodes
-directly, the API is the same, so the CSI driver is configured the same.
+---
 
-Nodes boot from a **prebaked AMI** with every package and the node scripts
-already in it. Terraform installs no software: it delivers the per-node inputs
-(secrets, peer addresses, the pool registry) and runs the baked `setup-node.sh`
-in place.
+## What do the nodes run
+
+Every node boots a **prebaked AMI** with all the applications a storage cluster
+needs already compiled and installed. Terraform installs no software: it delivers
+the per-node inputs (secrets, peer addresses, the pool registry) and runs the
+baked `setup-node.sh` in place.
+
+**One image, both planes.** The AMI is shared across the whole deployment, so
+provisioning is mostly a choice of role — `mgmt` for a control-plane node, the
+pool role for a data-plane node, or **both** on the same machine for simple
+single-pool setups.
+
+Available images and the regions they are published in:
+[Node image (AMI)](https://backedblock.io/docs/storage-cluster#node-image-ami).
+
+The same stack runs on both roles; only the plugin set differs.
+
+```
+   control-plane node · role mgmt             data-plane node · role pool
+  ┌────────────────────────────────┐         ┌────────────────────────────────┐
+  │ HTTP/S API · JSON RPC :8082    │────────▶│ HTTP/S API · JSON RPC          │
+  ├────────────────────────────────┤mgmt cmds├────────────────────────────────┤
+  │ core                           │         │ core                           │
+  │   joins nodes · elects leader  │         │   joins nodes · elects leader  │
+  │   keeps the cluster running    │         │   keeps the cluster running    │
+  ├────────────────────────────────┤         ├────────────────────────────────┤
+  │ plugins                        │         │ plugins                        │
+  │   management operations API    │         │   volume lifecycle · QoS       │
+  │   pool registry · federation   │         │   NVMe target · cache · S3     │
+  ├────────────────────────────────┤         ├────────────────────────────────┤
+  │ cassandra · cluster metadata   │         │ cassandra · cluster metadata   │
+  ├────────────────────────────────┤         ├────────────────────────────────┤
+  │ prometheus (optional)          │         │ prometheus (optional)          │
+  └────────────────────────────────┘         └────────────────────────────────┘
+   3+ nodes, one cluster                      3+ nodes, one isolated pool
+```
+
+### Control-plane applications
+
+- **core** — a distributed application that joins nodes into a cluster, runs
+  leader election, and keeps the cluster up. Depending on the node's role it
+  spawns a different set of plugins: the management-operations API, the lifecycle
+  of the data-plane components, or both.
+- **Cassandra** — the persistence layer for cluster metadata.
+- **HTTP/S API** — core exposes JSON RPC covering every cluster operation. It is
+  the same surface for every caller: the CSI driver, your own automation, or a
+  person at a terminal.
+
+### Data-plane applications
+
+The same set of applications; only the plugin set differs. Each group of nodes is
+an **isolated, self-sufficient pool** — its own lifecycle, its own leader
+election, its own self-healing, and no dependency on any other pool. A
+control-plane pool talks to data-plane components over the same HTTP/S JSON RPC,
+propagating management commands downstream to the pools.
+
+### Metrics (optional)
+
+A node can be started with the metrics feature enabled (`enable_metrics`), which
+brings up Prometheus on the node to collect and aggregate metrics from core and
+its plugins. `enable_grafana` adds Grafana on the cluster's VIP node.
 
 ---
 
