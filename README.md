@@ -194,9 +194,7 @@ its plugins. `enable_grafana` adds Grafana on the cluster's VIP node.
 
 ## Install
 
-Two steps, in this order.
-
-### 1. The storage cluster (this repo)
+### Deployment layouts
 
 Pick the blueprint that matches your scale — they're independent, each in its own
 directory.
@@ -229,46 +227,8 @@ your region is in [Node AMIs](https://backedblock.io/docs/node-amis).
 See each directory's `README.md` for the full steps, and
 [Install the storage cluster](https://backedblock.io/docs/storage-cluster) for
 the same ground with the reasoning attached — including how to size the cache
-before you apply.
-
-### 2. The CSI driver (Kubernetes)
-
-Once the cluster answers on `8082`, install
-[`migrx-io/mgx-csi-driver`](https://github.com/migrx-io/mgx-csi-driver) into
-Kubernetes:
-
-```bash
-helm install mgx-csi-driver oci://docker.io/migrx/mgx-csi-driver \
-  --namespace mgx-system --create-namespace \
-  --version 0.1.0 \
-  --set csiSecret.clusterConfig.nodes='{10.0.1.10:8082,10.0.1.11:8082,10.0.1.12:8082}' \
-  --set csiSecret.clusterConfig.username=admin \
-  --set csiSecret.clusterConfig.password=<MGX_GW_ADMIN_PASSWD> \
-  --set externalSnapshotter.enabled=true
-```
-
-`nodes` is every API endpoint of the storage cluster — the mgmt nodes' IPs if you
-deployed a management plane, the pool's `node_mgmt_private_ips` if you didn't.
-The password is `MGX_GW_ADMIN_PASSWD` from `secrets.env`. Full walkthrough:
+before you apply. The Kubernetes half — the CSI driver and a first PVC — is the
 [Quickstart](https://backedblock.io/docs/quickstart).
-
-Then a volume is an ordinary PVC:
-
-```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: data
-spec:
-  accessModes: ["ReadWriteOnce"]
-  storageClassName: mgxcsi-sc
-  resources:
-    requests:
-      storage: 100Gi
-```
-
-Thin-provisioned, expandable online, snapshottable to S3. `ReadWriteOnce` only —
-this is block storage, not a shared filesystem.
 
 ---
 
@@ -294,15 +254,5 @@ this is block storage, not a shared filesystem.
 |---|---|
 | [`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx) | The Terraform modules these blueprints call (`network`, `pool`, `mgmt`, `provision`). Pulled straight from GitHub — nothing to vendor. |
 | [`mgx-csi-driver`](https://github.com/migrx-io/mgx-csi-driver) | The CSI driver and its Helm chart: the Kubernetes half of the install. |
-
-## Docs
-
-- [Introduction](https://backedblock.io/docs) — what it is, and the tradeoffs
-- [Install the storage cluster](https://backedblock.io/docs/storage-cluster)
-- [Quickstart](https://backedblock.io/docs/quickstart) — driver, PVC, pod
-- [Architecture](https://backedblock.io/docs/architecture)
-- [Caching and tiering](https://backedblock.io/docs/caching)
-- [Snapshots and restore](https://backedblock.io/docs/snapshots)
-- [StorageClass parameters](https://backedblock.io/docs/storage-class)
 
 Questions: [support@backedblock.io](mailto:support@backedblock.io).
