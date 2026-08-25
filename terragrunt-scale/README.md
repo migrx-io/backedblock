@@ -83,8 +83,6 @@ subnet CIDRs, `bastion.vpc_subnet` (used for the NAT gateway), `nodes_ami`, and
 > pool2→`us-east-1b`, …). Shared pool sizing lives in `pools/_pool.hcl`; per-pool
 > identity, AZ, buckets, and cross-grant live in each pool's `terragrunt.hcl`.
 
-Pin `modules_ref` to a released tag when one is available (defaults to `main`).
-
 **Provisioning is SSM here** (agentless). setup-node.sh is run
 via SSM Run Command; nodes fetch the secrets from the SecureString created in
 step 1 and reach the SSM endpoints through the NAT gateway. (The `terraform-aws-mgx`
@@ -149,21 +147,29 @@ aws ssm describe-association-execution-targets --region us-east-1 \
 Nodes have **no public IP**. With `bastion.enable = true` (see `common.hcl`), the
 bastion is a public jump host in `bastion.vpc_subnet`; reach any node through it
 with SSH `-J`. All the addresses are in Terraform state — read them with
-`terragrunt output`, no AWS CLI needed:
+`terragrunt output`, no AWS CLI needed. The bastion, the first mgmt node and the
+first node of `pool1` (needs `jq`):
 
 ```bash
-(cd network     && terragrunt output -raw bastion_public_ip)   # bastion public IP
-(cd mgmt        && terragrunt output node_private_ips)          # mgmt node IPs
-(cd pools/pool1 && terragrunt output node_mgmt_private_ips)     # pool node IPs
+BASTION=$(cd network && terragrunt output -raw bastion_public_ip)
+MGMT=$(cd mgmt && terragrunt output -json node_private_ips | jq -r '.[0]')
+NODE=$(cd pools/pool1 && terragrunt output -json node_mgmt_private_ips | jq -r '.[0]')
 ```
 
 ```bash
-# shell on a node, jumping through the bastion
-ssh -J ubuntu@<bastion-public-ip> ubuntu@<node-private-ip>
+ssh -J ubuntu@$BASTION ubuntu@$MGMT
+ssh -J ubuntu@$BASTION ubuntu@$NODE
 ```
 
-### Port-forwarding Grafana (port 3000) through the bastion
+Any node will do — they are equivalent members of one cluster, which is why the
+snippet just takes the first one out of the list. Each node also ships the
+`mgx-cli` CLI, so once you are on one you can inventory and manage the whole
+cluster from there — see the [CLI reference](https://backedblock.io/docs/cli).
+Drop the `| jq -r '.[0]'` to see every address in an output.
 
+### Optional: port-forwarding Grafana (port 3000) through the bastion
+
+Only when the deployment was applied with `enable_metrics` and `enable_grafana`.
 Grafana always runs on the **VIP node of the management plane**, and the VIP can
 fail over between mgmt nodes — so don't assume a fixed IP, look it up.
 
@@ -188,16 +194,18 @@ mgx-core:127.0.0.1:main:main:admin> cluster list
 ]
 ```
 
-Use the `vip_host.ip` value as `<node-private-ip>` below. (`cluster nodes list`
-shows all nodes and their IPs if you need to cross-reference.) Because the VIP
-can fail over to another mgmt node, re-check `cluster list` if the tunnel stops
+Use the `vip_host.ip` value as `VIP` below. (`cluster nodes list` shows all
+nodes and their IPs if you need to cross-reference.) Because the VIP can fail
+over to another mgmt node, re-check `cluster list` if the tunnel stops
 working.
 
 Then forward the port through the bastion to that node:
 
 ```bash
-# port-forward Grafana through the bastion to the VIP mgmt node
-ssh -N -J ubuntu@<bastion-public-ip> -L 3000:localhost:3000 ubuntu@<node-private-ip>
+BASTION=$(cd network && terragrunt output -raw bastion_public_ip)
+VIP=<vip-node-ip>
+
+ssh -N -J ubuntu@$BASTION -L 3000:localhost:3000 ubuntu@$VIP
 ```
 
 Then open <http://localhost:3000>. `-N` keeps the tunnel open without running a

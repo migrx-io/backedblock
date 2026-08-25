@@ -35,7 +35,6 @@ Two stacks, each its own local state. `pool/` reads `network/`'s outputs from
 Edit the values in `network/main.tf` (`vpc_id`, `azs`, subnet CIDRs,
 `bastion.vpc_subnet`, `bastion.ami`, `key_name`, `ssh_public_key_path`) and
 `pool/main.tf` (`pool_name`, `az`, `nodes_ami`, sizing, `s3_bucket_names`).
-Pin the module `?ref=` to a released tag when one is available.
 
 > The bastion is **required** here — SSH provisioning reaches the no-public-IP
 > nodes through it. Lock `bastion.whitelist_ips` down to your own IP/CIDR.
@@ -63,21 +62,30 @@ Tear down in reverse: `(cd pool && terraform destroy)` then
 
 ## Connecting to nodes
 
-Nodes have no public IP; reach them through the bastion with SSH `-J`. Addresses
-come straight from state:
+Nodes have no public IP; reach them through the bastion with SSH `-J`. Both
+addresses come straight from state — the bastion's public IP, and the first node
+out of the pool's list (needs `jq`):
 
 ```bash
 BASTION=$(cd network && terraform output -raw bastion_public_ip)
-(cd pool && terraform output node_mgmt_private_ips)   # node private IPs
+NODE=$(cd pool && terraform output -json node_mgmt_private_ips | jq -r '.[0]')
 
-ssh -J ubuntu@$BASTION ubuntu@<node-private-ip>
+ssh -J ubuntu@$BASTION ubuntu@$NODE
 ```
+
+Any node will do — they are equivalent members of one cluster, which is why the
+snippet just takes the first one out of the list. Each node also ships the
+`mgx-cli` CLI, so once you are on one you can inventory and manage the whole
+cluster from there — see the [CLI reference](https://backedblock.io/docs/cli).
+`terraform output node_mgmt_private_ips` lists them all if you want a different
+one.
 
 Default SSH user is `ubuntu` and the key is `ssh_private_key_path` in
 `pool/main.tf`.
 
-### Port-forwarding Grafana (port 3000) through the bastion
+### Optional: port-forwarding Grafana (port 3000) through the bastion
 
+Only when the pool was applied with `enable_metrics` and `enable_grafana`.
 Grafana runs on a node with no public IP, so tunnel its port `3000` to your
 machine through the bastion. Use SSH `-J` to hop the bastion and `-L` to forward
 the local port.
@@ -104,17 +112,17 @@ mgx-core:127.0.0.1:main:main:admin> cluster list
 ]
 ```
 
-Use the `vip_host.ip` value as `<node-private-ip>` below. (`cluster nodes list`
-shows all nodes and their IPs if you need to cross-reference.) Because the VIP
-can fail over to another node, re-check `cluster list` if the tunnel stops
-working.
+Use the `vip_host.ip` value as `VIP` below. (`cluster nodes list` shows all
+nodes and their IPs if you need to cross-reference.) Because the VIP can fail
+over to another node, re-check `cluster list` if the tunnel stops working.
 
 Then forward the port through the bastion to that node:
 
 ```bash
 BASTION=$(cd network && terraform output -raw bastion_public_ip)
+VIP=<vip-node-ip>
 
-ssh -N -J ubuntu@$BASTION -L 3000:localhost:3000 ubuntu@<node-private-ip>
+ssh -N -J ubuntu@$BASTION -L 3000:localhost:3000 ubuntu@$VIP
 ```
 
 Then open <http://localhost:3000> in your browser. `-N` keeps the tunnel open
