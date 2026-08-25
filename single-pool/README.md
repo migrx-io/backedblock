@@ -27,7 +27,7 @@ Two stacks, each its own local state. `pool/` reads `network/`'s outputs from
 - AWS credentials with permissions for EC2, IAM, VPC, and S3 (no SSM needed)
 - An existing VPC and a **public** subnet (for the bastion + NAT gateway)
 - A prebaked **node AMI** for `nodes_ami` — ask
-  [hello@backedblock.io](mailto:hello@backedblock.io) for the current image ID in
+  [support@backedblock.io](mailto:support@backedblock.io) for the current image ID in
   your region
 - An SSH key pair on disk (`~/.ssh/id_rsa` / `~/.ssh/id_rsa.pub` by default)
 

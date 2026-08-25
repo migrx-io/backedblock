@@ -38,7 +38,7 @@ components are untouched. The modules are pulled straight from GitHub.
 - An existing VPC and a **public** subnet (for the NAT gateway)
 - An **S3 bucket** for Terraform state — created by the `bootstrap/` stack (step 1)
 - A prebaked **node AMI** for `nodes_ami` — ask
-  [hello@backedblock.io](mailto:hello@backedblock.io) for the current image ID in
+  [support@backedblock.io](mailto:support@backedblock.io) for the current image ID in
   your region; provisioning runs the baked `setup-node.sh` in place
 - Node secrets (see **Provisioning**)
 

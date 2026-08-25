@@ -143,8 +143,8 @@ provisioning is mostly a choice of role — `mgmt` for a control-plane node, the
 pool role for a data-plane node, or **both** on the same machine for simple
 single-pool setups.
 
-Available images and the regions they are published in:
-[Node image (AMI)](https://backedblock.io/docs/storage-cluster#node-image-ami).
+Base OS, architecture and the published AMI ID for each region:
+[Node AMIs](https://backedblock.io/docs/node-amis).
 
 The same stack runs on both roles; only the plugin set differs.
 
@@ -227,7 +227,7 @@ directory.
 You'll need: Terraform >= 1.4, AWS credentials (EC2, IAM, VPC, S3, and SSM for
 the fleet layout), an existing VPC with a public subnet for the NAT gateway, an
 SSH key pair, and a prebaked node AMI for `nodes_ami` — ask
-[hello@backedblock.io](mailto:hello@backedblock.io) for the current image ID in
+[support@backedblock.io](mailto:support@backedblock.io) for the current image ID in
 your region.
 
 See each directory's `README.md` for the full steps, and
@@ -309,4 +309,4 @@ this is block storage, not a shared filesystem.
 - [Snapshots and restore](https://backedblock.io/docs/snapshots)
 - [StorageClass parameters](https://backedblock.io/docs/storage-class)
 
-Questions, or an AMI for your region: [hello@backedblock.io](mailto:hello@backedblock.io).
+Questions, or an AMI for your region: [support@backedblock.io](mailto:support@backedblock.io).
