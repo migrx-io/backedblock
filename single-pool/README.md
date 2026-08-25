@@ -65,7 +65,7 @@ Tear down in reverse: `(cd pool && terraform destroy)` then
 Every node ships `mgx-cli` and the nodes are equivalent members of one cluster,
 so whichever one you land on drives the whole thing. Two steps.
 
-### Step 1 — connect to any node
+### Connect to any node
 
 Nodes have no public IP; reach them through the bastion with SSH `-J`. Both
 addresses come straight from state — the bastion's public IP, and the first node
@@ -78,11 +78,7 @@ NODE=$(cd pool && terraform output -json node_mgmt_private_ips | jq -r '.[0]')
 ssh -J ubuntu@$BASTION ubuntu@$NODE
 ```
 
-The first node is as good as any other; `terraform output
-node_mgmt_private_ips` lists them all if you want a different one. Default SSH
-user is `ubuntu` and the key is `ssh_private_key_path` in `pool/main.tf`.
-
-### Step 2 — run `mgx-cli` and log in
+### Run `mgx-cli` and log in
 
 ```
 $ mgx-cli

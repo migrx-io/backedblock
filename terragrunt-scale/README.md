@@ -147,7 +147,7 @@ aws ssm describe-association-execution-targets --region us-east-1 \
 Every node ships `mgx-cli` and the nodes are equivalent members of one cluster,
 so whichever one you land on drives the whole thing. Two steps.
 
-### Step 1 — connect to any node
+### Connect to any node
 
 Nodes have **no public IP**. With `bastion.enable = true` (see `common.hcl`), the
 bastion is a public jump host in `bastion.vpc_subnet`; reach any node through it
@@ -169,7 +169,7 @@ ssh -J ubuntu@$BASTION ubuntu@$NODE
 Drop the `| jq -r '.[0]'` to see every address in an output. Default user is
 `ubuntu` and the key is the one in `key_name` (`common.hcl`).
 
-### Step 2 — run `mgx-cli` and log in
+### Run `mgx-cli` and log in
 
 ```
 $ mgx-cli
