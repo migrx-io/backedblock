@@ -1,4 +1,4 @@
-# single-pool starter (plain Terraform, SSH)
+# single-pool layout
 
 The **simplest** backedblock.io deployment: one storage pool, no management plane,
 no SSM. Plain Terraform (no Terragrunt), and nodes are provisioned over SSH
@@ -62,6 +62,11 @@ Tear down in reverse: `(cd pool && terraform destroy)` then
 
 ## Managing the cluster with the CLI
 
+Every node ships `mgx-cli` and the nodes are equivalent members of one cluster,
+so whichever one you land on drives the whole thing. Two steps.
+
+### Step 1 — connect to any node
+
 Nodes have no public IP; reach them through the bastion with SSH `-J`. Both
 addresses come straight from state — the bastion's public IP, and the first node
 out of the pool's list (needs `jq`):
@@ -73,15 +78,24 @@ NODE=$(cd pool && terraform output -json node_mgmt_private_ips | jq -r '.[0]')
 ssh -J ubuntu@$BASTION ubuntu@$NODE
 ```
 
-Any node will do — they are equivalent members of one cluster, which is why the
-snippet just takes the first one out of the list. Each node also ships the
-`mgx-cli` CLI, so once you are on one you can inventory and manage the whole
-cluster from there — see the [CLI reference](https://backedblock.io/docs/cli).
-`terraform output node_mgmt_private_ips` lists them all if you want a different
-one.
+The first node is as good as any other; `terraform output
+node_mgmt_private_ips` lists them all if you want a different one. Default SSH
+user is `ubuntu` and the key is `ssh_private_key_path` in `pool/main.tf`.
 
-Default SSH user is `ubuntu` and the key is `ssh_private_key_path` in
-`pool/main.tf`.
+### Step 2 — run `mgx-cli` and log in
+
+```
+$ mgx-cli
+mgx-core:127.0.0.1:nologin> login admin --cluster main --ns main
+Password:
+ logged..
+mgx-core:127.0.0.1:main:main:admin> cluster nodes list
+```
+
+It talks to the API on `127.0.0.1:8082`, the node you are on, and the password is
+`MGX_GW_ADMIN_PASSWD` from `secrets.env`. Every command set — nodes, pools,
+volumes, snapshots — is documented in the
+[CLI reference](https://backedblock.io/docs/cli).
 
 ### Optional: port-forwarding Grafana (port 3000) through the bastion
 

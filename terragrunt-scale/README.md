@@ -1,4 +1,4 @@
-# backedblock.io starter (Terragrunt)
+# terragrunt-scale layout
 
 A ready-to-edit **golden-path** deployment of [backedblock.io](https://backedblock.io) on
 AWS, using [Terragrunt](https://terragrunt.gruntwork.io/) over the
@@ -144,6 +144,11 @@ aws ssm describe-association-execution-targets --region us-east-1 \
 
 ## Managing the cluster with the CLI
 
+Every node ships `mgx-cli` and the nodes are equivalent members of one cluster,
+so whichever one you land on drives the whole thing. Two steps.
+
+### Step 1 — connect to any node
+
 Nodes have **no public IP**. With `bastion.enable = true` (see `common.hcl`), the
 bastion is a public jump host in `bastion.vpc_subnet`; reach any node through it
 with SSH `-J`. All the addresses are in Terraform state — read them with
@@ -161,11 +166,23 @@ ssh -J ubuntu@$BASTION ubuntu@$MGMT
 ssh -J ubuntu@$BASTION ubuntu@$NODE
 ```
 
-Any node will do — they are equivalent members of one cluster, which is why the
-snippet just takes the first one out of the list. Each node also ships the
-`mgx-cli` CLI, so once you are on one you can inventory and manage the whole
-cluster from there — see the [CLI reference](https://backedblock.io/docs/cli).
-Drop the `| jq -r '.[0]'` to see every address in an output.
+Drop the `| jq -r '.[0]'` to see every address in an output. Default user is
+`ubuntu` and the key is the one in `key_name` (`common.hcl`).
+
+### Step 2 — run `mgx-cli` and log in
+
+```
+$ mgx-cli
+mgx-core:127.0.0.1:nologin> login admin --cluster main --ns main
+Password:
+ logged..
+mgx-core:127.0.0.1:main:main:admin> cluster nodes list
+```
+
+It talks to the API on `127.0.0.1:8082`, the node you are on, and the password is
+`MGX_GW_ADMIN_PASSWD` from `secrets.env`. Every command set — nodes, pools,
+volumes, snapshots — is documented in the
+[CLI reference](https://backedblock.io/docs/cli).
 
 ### Optional: port-forwarding Grafana (port 3000) through the bastion
 
@@ -212,10 +229,7 @@ Then open <http://localhost:3000>. `-N` keeps the tunnel open without running a
 remote command; Ctrl-C to close it. If local port `3000` is already taken, map a
 different one, e.g. `-L 3001:localhost:3000`.
 
-Default user is `ubuntu` and the key is the one in `key_name` (`common.hcl`).
 Lock `bastion.whitelist_ips` down to your own IP/CIDR before using it for real.
-The [`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx) repo
-ships a helper script that wraps these lookups.
 
 ## Day-2
 
