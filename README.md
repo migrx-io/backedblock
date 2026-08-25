@@ -224,12 +224,6 @@ the fleet layout), an existing VPC with a public subnet for the NAT gateway, an
 SSH key pair, and a prebaked node AMI for `nodes_ami` — the published ID for
 your region is in [Node AMIs](https://backedblock.io/docs/node-amis).
 
-See each directory's `README.md` for the full steps, and
-[Install the storage cluster](https://backedblock.io/docs/storage-cluster) for
-the same ground with the reasoning attached — including how to size the cache
-before you apply. The Kubernetes half — the CSI driver and a first PVC — is the
-[Quickstart](https://backedblock.io/docs/quickstart).
-
 ---
 
 ## Related repositories

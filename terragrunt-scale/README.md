@@ -6,7 +6,7 @@ AWS, using [Terragrunt](https://terragrunt.gruntwork.io/) over the
 
 It provisions:
 
-- a **management plane**
+- **management plane**
 - **storage pools** (`pool1` and `pool2` as an example)
 
 ```
