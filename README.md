@@ -1,4 +1,4 @@
-# backedblock.io
+# [backedblock.io](https://backedblock.io)
 
 **Block storage for Kubernetes that keeps its capacity in object storage.** A
 volume's blocks live in S3; its working set is served from a write-back cache on
@@ -231,22 +231,6 @@ before you apply. The Kubernetes half — the CSI driver and a first PVC — is 
 [Quickstart](https://backedblock.io/docs/quickstart).
 
 ---
-
-## Layout
-
-```
-.
-├── single-pool/        plain Terraform, one pool, SSH provisioning
-│   ├── network/        foundation: subnets, NAT, SG, key pair, bastion
-│   └── pool/           the storage pool
-└── terragrunt-scale/   Terragrunt, mgmt plane + N pools, SSM provisioning
-    ├── bootstrap/      creates the S3 state bucket (run first)
-    ├── common.hcl      all shared values — edit this first
-    ├── network/        foundation
-    ├── mgmt/           management plane (auto-discovers pools)
-    ├── pools/          one folder per pool
-    └── scripts/        new-pool.sh — scaffold a pool
-```
 
 ## Related repositories
 
