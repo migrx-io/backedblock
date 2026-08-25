@@ -26,9 +26,8 @@ Two stacks, each its own local state. `pool/` reads `network/`'s outputs from
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.4
 - AWS credentials with permissions for EC2, IAM, VPC, and S3 (no SSM needed)
 - An existing VPC and a **public** subnet (for the bastion + NAT gateway)
-- A prebaked **node AMI** for `nodes_ami` — ask
-  [support@backedblock.io](mailto:support@backedblock.io) for the current image ID in
-  your region
+- A prebaked **node AMI** for `nodes_ami` — the published ID for your region is
+  in [Node AMIs](https://backedblock.io/docs/node-amis)
 - An SSH key pair on disk (`~/.ssh/id_rsa` / `~/.ssh/id_rsa.pub` by default)
 
 ## Step 1 — configure

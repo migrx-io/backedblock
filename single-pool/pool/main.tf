@@ -35,7 +35,7 @@ module "pool" {
 
   description         = "Single pool"
   labels              = "name=pool-1,env=dev"
-  nodes_ami           = "ami-05c3b3ac5425f273c" # prebaked mgx AMI (mgx-packer)
+  nodes_ami           = "ami-05c3b3ac5425f273c" # prebaked node AMI (see docs/node-amis)
   nodes_instance_type = "m8gb.xlarge"
   nodes_count         = 3
 

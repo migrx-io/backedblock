@@ -165,27 +165,24 @@ The same stack runs on both roles; only the plugin set differs.
   ├────────────────────────────────┤         ├────────────────────────────────┤
   │ prometheus (optional)          │         │ prometheus (optional)          │
   └────────────────────────────────┘         └────────────────────────────────┘
-   3+ nodes, one cluster                      3+ nodes, one isolated pool
 ```
 
-### Control-plane applications
+### Applications
 
-- **core** — a distributed application that joins nodes into a cluster, runs
-  leader election, and keeps the cluster up. Depending on the node's role it
-  spawns a different set of plugins: the management-operations API, the lifecycle
-  of the data-plane components, or both.
+- **core** — the distributed application every node runs. It joins nodes into a
+  cluster, elects a leader, self-heals and keeps the cluster up. Each group of
+  nodes is a self-sufficient pool with its own membership and its own leader, and
+  does not depend on any other pool.
+- **plugins** — core extensions, each responsible for one piece of
+  functionality. Depending on the node's role core spawns a different set of
+  them: management operations and the pool registry on a control-plane node,
+  volume lifecycle, QoS and the data path on a data-plane node. That set is the
+  only difference between the two roles.
 - **Cassandra** — the persistence layer for cluster metadata.
-- **HTTP/S API** — core exposes JSON RPC covering every cluster operation. It is
-  the same surface for every caller: the CSI driver, your own automation, or a
-  person at a terminal.
-
-### Data-plane applications
-
-The same set of applications; only the plugin set differs. Each group of nodes is
-an **isolated, self-sufficient pool** — its own lifecycle, its own leader
-election, its own self-healing, and no dependency on any other pool. A
-control-plane pool talks to data-plane components over the same HTTP/S JSON RPC,
-propagating management commands downstream to the pools.
+- **HTTP/S API** — core exposes JSON RPC covering every cluster operation, the
+  same surface for every caller: the CSI driver, your own automation, or a person
+  at a terminal. It is also how a control-plane pool propagates management
+  commands down to the data-plane pools.
 
 ### Metrics (optional)
 
@@ -226,9 +223,8 @@ directory.
 
 You'll need: Terraform >= 1.4, AWS credentials (EC2, IAM, VPC, S3, and SSM for
 the fleet layout), an existing VPC with a public subnet for the NAT gateway, an
-SSH key pair, and a prebaked node AMI for `nodes_ami` — ask
-[support@backedblock.io](mailto:support@backedblock.io) for the current image ID in
-your region.
+SSH key pair, and a prebaked node AMI for `nodes_ami` — the published ID for
+your region is in [Node AMIs](https://backedblock.io/docs/node-amis).
 
 See each directory's `README.md` for the full steps, and
 [Install the storage cluster](https://backedblock.io/docs/storage-cluster) for
@@ -309,4 +305,4 @@ this is block storage, not a shared filesystem.
 - [Snapshots and restore](https://backedblock.io/docs/snapshots)
 - [StorageClass parameters](https://backedblock.io/docs/storage-class)
 
-Questions, or an AMI for your region: [support@backedblock.io](mailto:support@backedblock.io).
+Questions: [support@backedblock.io](mailto:support@backedblock.io).

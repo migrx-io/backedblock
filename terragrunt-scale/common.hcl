@@ -9,7 +9,7 @@ locals {
   # --- global ----------------------------------------------------------------
   region       = "us-east-1"
   cluster      = "main"
-  state_bucket = "mgx-storage-tf-state" # created by the bootstrap/ stack
+  state_bucket = "backedblock-tf-state" # created by the bootstrap/ stack
 
   # --- network ---------------------------------------------------------------
   # azs is ONLY for the network: it builds one mgmt + one storage subnet per AZ.
@@ -44,9 +44,9 @@ locals {
   ssh_public_key_path = "~/.ssh/id_rsa.pub"
 
   # --- node image ------------------------------------------------------------
-  # Prebaked mgx AMI (built by mgx-packer); provisioning runs the baked
-  # setup-node.sh in place.
-  nodes_ami = "ami-062273fbec7a2f785"
+  # Prebaked node AMI (https://backedblock.io/docs/node-amis); provisioning
+  # runs the baked setup-node.sh in place.
+  nodes_ami = "ami-05c3b3ac5425f273c"
 
   # --- provisioning ----------------------------------------------------------
   # This Terragrunt example always provisions via SSM (agentless). setup-node.sh

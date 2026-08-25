@@ -11,7 +11,7 @@ terraform {
 }
 
 inputs = {
-  name_prefix          = "mgx-storage"
+  name_prefix          = "backedblock"
   vpc_id               = local.common.vpc_id
   azs                  = local.common.azs
   mgmt_subnet_cidrs    = local.common.mgmt_subnet_cidrs
