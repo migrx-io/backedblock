@@ -100,6 +100,20 @@ Cloud resources created in your AWS account for the storage cluster:
  │            └──────────────────────────────────────────────────┘            │
 ```
 
+The infrastructure is the same shape for both planes — same AMI, same subnets,
+same provisioning. The difference is that **control-plane nodes carry no cache
+disks and need no buckets**: the data-path components do not run there, so there
+is no I/O to cache and nothing to flush to S3. What is drawn above is a
+data-plane pool; a management plane is the same picture without the EBS boxes and
+the S3 group.
+
+> **Note.** Small installations do not need separate control-plane nodes. The
+> control-plane and data-plane components can run together on the same machines,
+> which collapses the whole deployment into N equivalent nodes forming one
+> storage pool — every node identical, every node running both planes. Larger
+> deployments split them, with a management plane of its own and pools beneath
+> it.
+
 Those EC2 nodes, their cache disks and their buckets are one **pool** — the unit
 volumes are placed in and served from. Terraform creates:
 
@@ -116,10 +130,9 @@ volumes are placed in and served from. Terraform creates:
   you provide — the ssh jump host for nodes that have no public IP.
 
 Pools are independent — applying or destroying one leaves the others alone. A
-fleet adds a **management plane**: its own EC2 nodes that discover every pool,
-present one API for all of them and federate their metrics. Small installations
-skip it and talk to the pool nodes directly; either way the API is the same, so
-the CSI driver is configured the same.
+fleet's **management plane** discovers every pool, presents one API for all of
+them and federates their metrics; whether you run one or talk to the pool nodes
+directly, the API is the same, so the CSI driver is configured the same.
 
 Nodes boot from a **prebaked AMI** with every package and the node scripts
 already in it. Terraform installs no software: it delivers the per-node inputs
