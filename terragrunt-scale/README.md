@@ -1,14 +1,13 @@
 # terragrunt-scale layout
 
-A ready-to-edit **golden-path** deployment of [backedblock.io](https://backedblock.io) on
+A ready-to-edit **scale** deployment of [backedblock.io](https://backedblock.io) on
 AWS, using [Terragrunt](https://terragrunt.gruntwork.io/) over the
 [`migrx-io/terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx) modules.
 
 It provisions:
 
-- **1 management plane** (3 nodes)
-- **2 storage pools**, `pool1` and `pool2`, each with an **EBS RAID0 cache**
-  (`raid_level = 0`), explicitly cross-granted IAM access to each other's S3 buckets
+- a **management plane**
+- **storage pools** (`pool1` and `pool2` as an example)
 
 ```
 .
@@ -78,8 +77,8 @@ subnet CIDRs, `bastion.vpc_subnet` (used for the NAT gateway), `nodes_ami`, and
 
 > `azs` in `common.hcl` is the set of AZs the **network** builds subnets in. Each
 > pool pins itself to a **single** AZ via its own `az` in
-> `pools/<pool>/terragrunt.hcl` (EBS RAID0 cache volumes are AZ-bound) — that `az`
-> must be one of `azs`. So you can spread pools across AZs (pool1→`us-east-1a`,
+> `pools/<pool>/terragrunt.hcl` (EBS cache volumes are AZ-bound) — that `az` must
+> be one of `azs`. So you can spread pools across AZs (pool1→`us-east-1a`,
 > pool2→`us-east-1b`, …). Shared pool sizing lives in `pools/_pool.hcl`; per-pool
 > identity, AZ, buckets, and cross-grant live in each pool's `terragrunt.hcl`.
 
