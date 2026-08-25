@@ -60,7 +60,7 @@ time — it never leaves your machine for AWS storage.
 Tear down in reverse: `(cd pool && terraform destroy)` then
 `(cd network && terraform destroy)`.
 
-## Connecting to nodes
+## Managing the cluster with the CLI
 
 Nodes have no public IP; reach them through the bastion with SSH `-J`. Both
 addresses come straight from state — the bastion's public IP, and the first node
@@ -92,7 +92,7 @@ the local port.
 
 **First identify the VIP node.** Grafana always runs on the cluster's VIP node,
 and the VIP can move between nodes, so don't assume a fixed IP — look it up.
-SSH into any node (see "Connecting to nodes" above), open the `mgx-core` CLI,
+SSH into any node (see above), open the CLI,
 and query the cluster:
 
 ```

@@ -88,7 +88,7 @@ via SSM Run Command; nodes fetch the secrets from the SecureString created in
 step 1 and reach the SSM endpoints through the NAT gateway. (The `terraform-aws-mgx`
 modules also support `provision_mode = "ssh"`, which needs the bastion.) The
 bastion (`bastion.enable = true`) is independent of provisioning — it's the SSH
-jump host for **Connecting to nodes** below.
+jump host for **Managing the cluster with the CLI** below.
 
 ## Step 3 — deploy (Terragrunt)
 
@@ -142,7 +142,7 @@ aws ssm describe-association-execution-targets --region us-east-1 \
   --association-id <id> --execution-id <execution-id>
 ```
 
-## Connecting to nodes
+## Managing the cluster with the CLI
 
 Nodes have **no public IP**. With `bastion.enable = true` (see `common.hcl`), the
 bastion is a public jump host in `bastion.vpc_subnet`; reach any node through it
