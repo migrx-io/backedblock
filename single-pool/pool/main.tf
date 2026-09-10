@@ -54,6 +54,17 @@ module "pool" {
     count      = 10
   }]
 
+  # Write-back cache tuning. Pool-wide (every volume the pool serves); defaults
+  # match the node image, so omit them unless you are tuning.
+  # cache_flush_threads       = 20
+  # cache_flush_interval      = 1000
+  # cache_flush_blocks        = 5
+  # cache_flush_max_age       = 3000
+  # cache_fill_threshold      = 60
+  # block_cache_flush_threads = 30
+  # block_cache_size          = 300 # MiB
+  # block_cache_threads       = 30
+
   s3_bucket_names        = ["mgxs3storage1"]
   s3_backup_bucket_names = ["mgxs3backup1"]
   s3_force_destroy       = true
