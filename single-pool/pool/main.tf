@@ -35,19 +35,19 @@ module "pool" {
 
   description         = "Single pool"
   labels              = "name=pool-1,env=dev"
-  nodes_ami           = "ami-05c3b3ac5425f273c" # prebaked node AMI (see docs/node-amis)
-  nodes_instance_type = "m8gb.xlarge"
+  nodes_ami           = "ami-0a3b4991d21bd6e7b" # prebaked node AMI (see docs/node-amis)
+  nodes_instance_type = "c6gn.2xlarge"
   nodes_count         = 3
 
   # EBS RAID0 cache: pin the pool to a single AZ (EBS volumes are AZ-bound).
   az                    = "us-east-1a"
   raid_level            = 0
   nvme_node_disks_count = 10 # = total ebs_volumes count when raid_level = 0
-  max_volumes_count     = 10
-  r_cache_size_in_mib   = 90000
-  rw_cache_size_in_mib  = 10000
+  max_volumes_count     = 3
+  r_cache_size_in_mib   = 97275
+  rw_cache_size_in_mib  = 48638
   ebs_volumes = [{
-    size       = 100
+    size       = 103
     type       = "gp3"
     iops       = 3000
     throughput = 125

@@ -2,15 +2,15 @@
 # merges these with its own pool_name / buckets / description.
 locals {
   pool_defaults = {
-    nodes_instance_type   = "m8gb.xlarge"
+    nodes_instance_type   = "c6gn.2xlarge"
     nodes_count           = 3
     raid_level            = 0
     nvme_node_disks_count = 10 # must equal the total ebs_volumes count
-    max_volumes_count     = 10
-    r_cache_size_in_mib   = 90000
-    rw_cache_size_in_mib  = 10000
+    max_volumes_count     = 3
+    r_cache_size_in_mib   = 97275
+    rw_cache_size_in_mib  = 48638
     ebs_volumes = [{
-      size       = 100
+      size       = 103
       type       = "gp3"
       iops       = 3000
       throughput = 125
