@@ -35,7 +35,7 @@ module "pool" {
 
   description         = "Single pool"
   labels              = "name=pool-1,env=dev"
-  nodes_ami           = "ami-0a3b4991d21bd6e7b" # prebaked node AMI (see docs/node-amis)
+  nodes_ami           = "ami-0c0a95589b2eefe2f" # prebaked node AMI (see docs/node-amis)
   nodes_instance_type = "c6gn.2xlarge"
   nodes_count         = 3
 
