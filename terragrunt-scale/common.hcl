@@ -35,7 +35,7 @@ locals {
   bastion = {
     enable        = true
     vpc_subnet    = "subnet-06b5191fc3bf0caff" # public subnet (used for the NAT gateway)
-    ami           = "ami-0b14ba08cea3367cc" # Canonical Ubuntu 22.04 arm64 (us-east-1)
+    ami           = "ami-041e0c55b50efcdd3" # Canonical Ubuntu 22.04 arm64 (us-east-1)
     instance_type = "t4g.micro"
     whitelist_ips = ["0.0.0.0/0"]
   }
