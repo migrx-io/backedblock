@@ -18,14 +18,43 @@ locals {
     }]
     # Write-back cache tuning, pool-wide. Defaults match the node image;
     # uncomment to tune every pool at once.
-    # cache_flush_threads       = 10
-    # cache_flush_interval      = 300
-    # cache_flush_blocks        = 5
-    # cache_flush_max_age       = 3000
-    # cache_fill_threshold      = 100
-    # block_cache_flush_threads = 30
-    # block_cache_size          = 300
-    # block_cache_threads       = 30
+    # cache_flush_threads        = 10
+    # cache_flush_interval       = 300
+    # cache_flush_blocks         = 5
+    # cache_flush_max_age        = 3000
+    # cache_fill_threshold       = 100
+    # cache_write_throttle_ms    = 50
+    # cache_high_threshold       = 95
+    # cache_low_threshold        = 85
+    # cache_reclaim_scan_blocks  = 12800
+    # cache_reclaim_scan_tries   = 20
+    # cache_lru_percent          = 50
+    # cache_reclaim_high_count   = 2
+    # cache_reclaim_max_count    = 64
+    # cache_max_overflow_percent = 5
+    # cache_readahead_trigger    = 3
+    # cache_readahead_blocks     = 32
+    # cache_readahead_batch      = 4
+    # cache_readahead_threads    = 8
+    # cache_sync_interval        = 300
+    # cache_persist_interval     = 1000
+    # block_cache_flush_threads  = 30
+    # block_cache_size           = 300
+    # block_cache_threads        = 30
+
+    # Storage / snapshot plugin config (storage.yaml); defaults match the node image.
+    # storage_s3purge            = "yes"
+    # cache_r_cache_size         = 4096
+    # cache_rw_cache_size        = 1024
+    # qos_rw_ios_per_sec         = 16000
+    # qos_rw_mbytes_per_sec      = 250
+    # qos_r_mbytes_per_sec       = 250
+    # qos_w_mbytes_per_sec       = 250
+    # snapshot_storage_class     = "GLACIER_IR"
+    # snapshot_transfers         = 100
+    # snapshot_checkers          = 64
+    # snapshot_max_running       = 5
+    # snapshot_max_increments    = 10
 
     enable_metrics = true
     enable_grafana = false
