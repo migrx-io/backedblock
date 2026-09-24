@@ -46,7 +46,7 @@ locals {
   # --- node image ------------------------------------------------------------
   # Prebaked node AMI (https://backedblock.io/docs/node-amis); provisioning
   # runs the baked setup-node.sh in place.
-  nodes_ami = "ami-0352ea41018965493"
+  nodes_ami = "ami-0f9181ffb32ae470d"
 
   # --- provisioning ----------------------------------------------------------
   # This Terragrunt example always provisions via SSM (agentless). setup-node.sh
