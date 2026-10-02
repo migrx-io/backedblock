@@ -3,7 +3,9 @@
 #
 #   scripts/new-pool.sh <name> [az] [storage_bucket] [backup_bucket]
 #
-# Defaults: az = us-east-1a, storage = mgxs3storage-<name>, backup = mgxs3backup-<name>.
+# Defaults: az = us-east-1a, storage = mgx-storage-<slug>, backup = mgx-backup-<slug>,
+# where <slug> is the lowercased name with a dash before a trailing number
+# (pool3 -> pool-3), e.g. mgx-storage-pool-3 / mgx-backup-pool-3.
 # The pool is pinned to `az` (must be one of azs in common.hcl). Sizing/cache
 # come from pools/_pool.hcl. Cross-grant starts empty — edit s3_bucket_access_names
 # in the generated file to allow access to other pools' buckets. mgmt
@@ -24,8 +26,10 @@ if ! [[ "$NAME" =~ ^[a-zA-Z0-9-]+$ ]]; then
 fi
 
 AZ="${2:-us-east-1a}"
-STORAGE="${3:-mgxs3storage-$NAME}"
-BACKUP="${4:-mgxs3backup-$NAME}"
+# S3 bucket names must be lowercase; pool3 -> pool-3.
+SLUG="$(echo "$NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/^(.*[a-z])([0-9]+)$/\1-\2/')"
+STORAGE="${3:-mgx-storage-$SLUG}"
+BACKUP="${4:-mgx-backup-$SLUG}"
 DESC="Pool $NAME (EBS RAID0 cache)"
 LABELS="name=$NAME"
 

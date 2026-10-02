@@ -68,8 +68,8 @@ module "pool" {
   # snapshot_max_running       = 5
   # snapshot_max_increments    = 10
 
-  s3_bucket_names        = ["mgxs3storage1"]
-  s3_backup_bucket_names = ["mgxs3backup1"]
+  s3_bucket_names        = ["mgx-storage-pool-1"]
+  s3_backup_bucket_names = ["mgx-backup-pool-1"]
   s3_force_destroy       = true
 
   enable_metrics = true

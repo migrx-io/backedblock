@@ -26,8 +26,8 @@ inputs = merge(local.defaults, local.common.provision_inputs, {
   description = "Pool 1"
   labels      = "name=pool-1,env=dev"
 
-  s3_bucket_names        = ["mgxs3storage1"]
-  s3_backup_bucket_names = ["mgxs3backup1"]
-  s3_bucket_access_names = ["mgxs3backup2"] # cross-grant: access pool2's buckets
+  s3_bucket_names        = ["mgx-storage-pool-1"]
+  s3_backup_bucket_names = ["mgx-backup-pool-1"]
+  s3_bucket_access_names = ["mgx-backup-pool-2"] # cross-grant: access pool2's buckets
   s3_force_destroy       = true
 })
