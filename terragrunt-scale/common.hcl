@@ -35,7 +35,7 @@ locals {
   bastion = {
     enable        = true
     vpc_subnet    = "subnet-06b5191fc3bf0caff" # public subnet (used for the NAT gateway)
-    ami           = "ami-0cdfe034d3204dfa8" # Canonical Ubuntu 22.04 arm64 (us-east-1)
+    ami           = "ami-03dac6c363b33b131" # Canonical Ubuntu 22.04 arm64 (us-east-1)
     instance_type = "t4g.micro"
     whitelist_ips = ["0.0.0.0/0"]
   }
@@ -46,7 +46,7 @@ locals {
   # --- node image ------------------------------------------------------------
   # Prebaked node AMI (https://backedblock.io/docs/node-amis); provisioning
   # runs the baked setup-node.sh in place.
-  nodes_ami = "ami-07b5fb1cc04fcef7f"
+  nodes_ami = "ami-0cdfe034d3204dfa8"
 
   # --- provisioning ----------------------------------------------------------
   # This Terragrunt example always provisions via SSM (agentless). setup-node.sh
