@@ -68,6 +68,7 @@ module "pool" {
   # snapshot_checkers          = 64
   # snapshot_max_running       = 5
   # snapshot_max_increments    = 10
+  # scheduler_node_down_wait   = 300 # seconds a node stays DOWN before auto-drain + volume failover
 
   s3_bucket_names        = ["mgx-storage-pool-1"]
   s3_backup_bucket_names = ["mgx-backup-pool-1"]

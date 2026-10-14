@@ -31,6 +31,7 @@ locals {
     # snapshot_checkers          = 64
     # snapshot_max_running       = 5
     # snapshot_max_increments    = 10
+    # scheduler_node_down_wait   = 300 # seconds a node stays DOWN before auto-drain + volume failover
 
     enable_metrics = true
     enable_grafana = false
