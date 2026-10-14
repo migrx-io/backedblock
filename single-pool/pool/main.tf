@@ -53,6 +53,7 @@ module "pool" {
     throughput = 125
     count      = 10
   }]
+  # cache_filesystem      = "xfs" # cache disk filesystem: "xfs" (default) or "ext4"
 
   # Storage / snapshot plugin config (storage.yaml); defaults match the node image.
   # storage_s3purge            = "yes"
