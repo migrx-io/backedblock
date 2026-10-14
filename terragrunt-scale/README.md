@@ -82,6 +82,14 @@ subnet CIDRs, `bastion.vpc_subnet` (used for the NAT gateway), `nodes_ami`, and
 > pool2→`us-east-1b`, …). Shared pool sizing lives in `pools/_pool.hcl`; per-pool
 > identity, AZ, buckets, and cross-grant live in each pool's `terragrunt.hcl`.
 
+Optional pool settings ship commented out in `pools/_pool.hcl` — uncomment to override
+the module defaults:
+
+| Option | Default | Values |
+|---|---|---|
+| `cache_filesystem` | `"xfs"` | cache disk filesystem: `"xfs"` or `"ext4"` |
+| `scheduler_node_down_wait` | `300` | seconds a node must stay DOWN before it is auto-drained and its volumes fail over |
+
 **Provisioning is SSM here** (agentless). setup-node.sh is run
 via SSM Run Command; nodes fetch the secrets from the SecureString created in
 step 1 and reach the SSM endpoints through the NAT gateway. (The `terraform-aws-mgx`

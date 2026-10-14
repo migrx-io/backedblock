@@ -36,6 +36,14 @@ Edit the values in `network/main.tf` (`vpc_id`, `azs`, subnet CIDRs,
 `bastion.vpc_subnet`, `bastion.ami`, `key_name`, `ssh_public_key_path`) and
 `pool/main.tf` (`pool_name`, `az`, `nodes_ami`, sizing, `s3_bucket_names`).
 
+Optional pool settings ship commented out in `pool/main.tf` — uncomment to override
+the module defaults:
+
+| Option | Default | Values |
+|---|---|---|
+| `cache_filesystem` | `"xfs"` | cache disk filesystem: `"xfs"` or `"ext4"` |
+| `scheduler_node_down_wait` | `300` | seconds a node must stay DOWN before it is auto-drained and its volumes fail over |
+
 > The bastion is **required** here — SSH provisioning reaches the no-public-IP
 > nodes through it. Lock `bastion.whitelist_ips` down to your own IP/CIDR.
 
