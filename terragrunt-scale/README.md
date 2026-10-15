@@ -87,7 +87,7 @@ the module defaults:
 
 | Option | Default | Values |
 |---|---|---|
-| `cache_filesystem` | `"xfs"` | cache disk filesystem: `"xfs"` or `"ext4"` |
+| `cache_filesystem` | `"ext4"` | cache disk filesystem: `"xfs"` or `"ext4"` |
 | `scheduler_node_down_wait` | `300` | seconds a node must stay DOWN before it is auto-drained and its volumes fail over |
 
 **Provisioning is SSM here** (agentless). setup-node.sh is run
