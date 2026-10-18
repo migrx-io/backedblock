@@ -118,8 +118,9 @@ Those EC2 nodes, their cache disks and their buckets are one **pool** — the un
 volumes are placed in and served from. Terraform creates:
 
 - **Two subnets per AZ, one network each way.** The *mgmt* subnet carries control
-  traffic — the management API on `8082`, ssh, metrics — and the *data* subnet
-  carries volume I/O over NVMe-oF/TCP. Every node has an interface in both.
+  traffic — the management API on `8082`, optional SSH, and metrics — and the
+  *data* subnet carries volume I/O over NVMe-oF/TCP. Every node has an interface
+  in both.
 - **EC2 storage nodes**, each with its own **cache disks** — EBS volumes striped
   RAID0, or local NVMe. That cache is what gives a volume its latency, so its
   size is the number worth getting right before you apply.
@@ -204,25 +205,24 @@ directory.
 | **Use when** | one pool, a lab, a PoC | many pools, a real fleet |
 | **Tooling** | plain Terraform | [Terragrunt](https://terragrunt.gruntwork.io/) (DRY, `run --all`) |
 | **Topology** | 1 storage pool | management plane + N storage pools |
-| **Provisioning** | SSH via bastion | SSM Run Command (agentless) |
-| **Secrets** | local `secrets.env`, uploaded over SSH | SSM SecureString |
+| **Provisioning** | SSM Run Command | SSM Run Command |
+| **Secrets** | SSM SecureString | SSM SecureString |
 | **Pool discovery** | n/a (single pool) | pools auto-discovered via SSM Parameter Store |
 | **State** | local (per stack) | S3 backend (per unit) |
-| **Bastion** | required (it's the provisioning path) | optional — only for SSH access to nodes |
+| **Bastion** | disabled by default; optional for SSH | disabled by default; optional for SSH |
 
 - **Just want one pool running?** → [`single-pool/`](single-pool). Two
-  `terraform apply`s (network, then pool), no Terragrunt, no SSM. Provisioning
-  happens over SSH through a bastion.
+  `terraform apply`s (network, then pool), no Terragrunt. Provisioning and
+  operator access use SSM; the bastion is optional.
 
 - **Running a fleet?** → [`terragrunt-scale/`](terragrunt-scale). Each pool is a
   ~25-line `terragrunt.hcl`, `run --all` builds the dependency graph, a mgmt
-  plane auto-discovers every pool, and provisioning is agentless over SSM (no
-  bastion needed — though you can enable one purely for SSH access).
+  plane auto-discovers every pool, and provisioning and operator access use SSM.
 
-You'll need: Terraform >= 1.4, AWS credentials (EC2, IAM, VPC, S3, and SSM for
-the fleet layout), an existing VPC with a public subnet for the NAT gateway, an
-SSH key pair, and a prebaked node AMI for `nodes_ami` — the published ID for
-your region is in [Node AMIs](https://backedblock.io/docs/node-amis).
+You'll need Terraform >= 1.4, AWS credentials with EC2, IAM, VPC, S3, and SSM
+permissions, an existing VPC with a public subnet for the NAT gateway, and a
+prebaked node AMI for `nodes_ami` — the published ID for your region is in
+[Node AMIs](https://backedblock.io/docs/node-amis).
 
 ---
 

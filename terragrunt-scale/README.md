@@ -17,7 +17,7 @@ It provisions:
 ├── scripts/
 │   └── new-pool.sh         # scaffold a new pools/<name>/ unit
 ├── secrets.env.example
-├── network/                # foundation: subnets, NAT, SG, key pair, bastion
+├── network/                # foundation: subnets, NAT, SG, optional bastion
 ├── mgmt/                   # management plane (auto-discovers all pools)
 └── pools/
     ├── _pool.hcl           # shared pool defaults (DRY)
@@ -33,6 +33,7 @@ components are untouched. The modules are pulled straight from GitHub.
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.4 and
   [Terragrunt](https://terragrunt.gruntwork.io/docs/getting-started/install/)
+- AWS CLI and the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
 - AWS credentials with permissions for EC2, IAM, VPC, S3, and SSM
 - An existing VPC and a **public** subnet (for the NAT gateway)
 - An **S3 bucket** for Terraform state — created by the `bootstrap/` stack (step 1)
@@ -90,12 +91,12 @@ the module defaults:
 | `cache_filesystem` | `"ext4"` | cache disk filesystem: `"xfs"` or `"ext4"` |
 | `scheduler_node_down_wait` | `300` | seconds a node must stay DOWN before it is auto-drained and its volumes fail over |
 
-**Provisioning is SSM here** (agentless). setup-node.sh is run
+**Provisioning is SSM here.** setup-node.sh is run
 via SSM Run Command; nodes fetch the secrets from the SecureString created in
 step 1 and reach the SSM endpoints through the NAT gateway. (The `terraform-aws-mgx`
-modules also support `provision_mode = "ssh"`, which needs the bastion.) The
-bastion (`bastion.enable = true`) is independent of provisioning — it's the SSH
-jump host for **Managing the cluster with the CLI** below.
+modules also support `provision_mode = "ssh"`, which needs the bastion.) SSM is
+also the default for interactive node access and private port forwarding. The
+bastion is disabled by default and is only needed if you explicitly choose SSH.
 
 ## Step 3 — deploy (Terragrunt)
 
@@ -154,27 +155,14 @@ aws ssm describe-association-execution-targets --region us-east-1 \
 Every node ships `mgx-cli` and the nodes are equivalent members of one cluster,
 so whichever one you land on drives the whole thing. Two steps.
 
-### Connect to any node
+### Connect to any node with Session Manager
 
-Nodes have **no public IP**. With `bastion.enable = true` (see `common.hcl`), the
-bastion is a public jump host in `bastion.vpc_subnet`; reach any node through it
-with SSH `-J`. All the addresses are in Terraform state — read them with
-`terragrunt output`, no AWS CLI needed. The bastion, the first mgmt node and the
-first node of `pool1` (needs `jq`):
+Nodes have **no public IP**. Find the instance ID in the EC2 console or the
+Systems Manager managed-nodes list, then start a shell session:
 
 ```bash
-BASTION=$(cd network && terragrunt output -raw bastion_public_ip)
-MGMT=$(cd mgmt && terragrunt output -json node_private_ips | jq -r '.[0]')
-NODE=$(cd pools/pool1 && terragrunt output -json node_mgmt_private_ips | jq -r '.[0]')
+aws ssm start-session --region us-east-1 --target i-INSTANCE_ID
 ```
-
-```bash
-ssh -J ubuntu@$BASTION ubuntu@$MGMT
-ssh -J ubuntu@$BASTION ubuntu@$NODE
-```
-
-Drop the `| jq -r '.[0]'` to see every address in an output. Default user is
-`ubuntu` and the key is the one in `key_name` (`common.hcl`).
 
 ### Run `mgx-cli` and log in
 
@@ -191,15 +179,14 @@ It talks to the API on `127.0.0.1:8082`, the node you are on, and the password i
 volumes, snapshots — is documented in the
 [CLI reference](https://backedblock.io/docs/cli).
 
-### Optional: port-forwarding Grafana (port 3000) through the bastion
+### Optional: port-forward Grafana (port 3000) with Session Manager
 
 Only when the deployment was applied with `enable_metrics` and `enable_grafana`.
 Grafana always runs on the **VIP node of the management plane**, and the VIP can
 fail over between mgmt nodes — so don't assume a fixed IP, look it up.
 
-**First identify the VIP mgmt node.** SSH into *any* mgmt node (its IPs are in
-`mgmt`'s `node_private_ips` output above), open the `mgx-core` CLI, and query the
-cluster:
+**First identify the VIP mgmt node.** Open a Session Manager shell to *any* mgmt
+node, run `mgx-cli`, and query the cluster:
 
 ```
 mgx-core:127.0.0.1:nologin> login admin --cluster main --ns main
@@ -218,25 +205,27 @@ mgx-core:127.0.0.1:main:main:admin> cluster list
 ]
 ```
 
-Use the `vip_host.ip` value as `VIP` below. (`cluster nodes list` shows all
-nodes and their IPs if you need to cross-reference.) Because the VIP can fail
-over to another mgmt node, re-check `cluster list` if the tunnel stops
-working.
-
-Then forward the port through the bastion to that node:
+Use the `vip_host.ip` value to find the EC2 instance ID of the current VIP node.
+If the VIP moves, repeat this lookup and start a new session:
 
 ```bash
-BASTION=$(cd network && terragrunt output -raw bastion_public_ip)
-VIP=<vip-node-ip>
-
-ssh -N -J ubuntu@$BASTION -L 3000:localhost:3000 ubuntu@$VIP
+VIP=172.31.102.214
+INSTANCE_ID=$(aws ec2 describe-instances --region us-east-1 \
+  --filters "Name=private-ip-address,Values=$VIP" \
+  --query 'Reservations[].Instances[].InstanceId' --output text)
 ```
 
-Then open <http://localhost:3000>. `-N` keeps the tunnel open without running a
-remote command; Ctrl-C to close it. If local port `3000` is already taken, map a
-different one, e.g. `-L 3001:localhost:3000`.
+Forward the port:
 
-Lock `bastion.whitelist_ips` down to your own IP/CIDR before using it for real.
+```bash
+aws ssm start-session --region us-east-1 --target "$INSTANCE_ID" \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
+```
+
+Then open <http://localhost:3000>. Keep the command running while using Grafana
+and press Ctrl-C to close the tunnel. If local port `3000` is already taken,
+set `localPortNumber` to another port such as `3001`.
 
 ## Day-2
 

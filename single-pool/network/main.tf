@@ -39,15 +39,14 @@ module "network" {
     "172.31.176.0/20", # us-east-1c
   ]
 
-  # ssh provisioning needs the bastion: nodes have no public IP, so Terraform
-  # reaches them through this jump host. Lock whitelist_ips down to your own
-  # IP/CIDR for anything beyond a quick test.
+  # SSM is the default for provisioning and operator access, so no bastion is
+  # needed. Enable it only if you explicitly want SSH access to private nodes.
   bastion = {
-    enable        = true
+    enable        = false
     vpc_subnet    = "subnet-06b5191fc3bf0caff" # public subnet (also hosts the NAT gateway)
     ami           = "ami-029f1e8b2d0665554"
     instance_type = "t4g.micro"
-    whitelist_ips = ["0.0.0.0/0"]
+    whitelist_ips = []
   }
 
   ssh_public_key_path = "~/.ssh/id_rsa.pub"

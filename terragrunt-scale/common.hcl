@@ -29,15 +29,15 @@ locals {
     "172.31.176.0/20", # us-east-1c
   ]
 
-  # Bastion is enabled for SSH access to nodes (jump host). It lives in
-  # vpc_subnet, the public subnet that also hosts the NAT gateway. Lock
-  # whitelist_ips down to your own IP/CIDR for anything beyond a quick test.
+  # SSM is the default for provisioning and operator access. Leave the bastion
+  # disabled unless you explicitly need SSH access to nodes. If enabled, lock
+  # whitelist_ips down to trusted addresses. vpc_subnet is also used by the NAT.
   bastion = {
-    enable        = true
+    enable        = false
     vpc_subnet    = "subnet-06b5191fc3bf0caff" # public subnet (used for the NAT gateway)
     ami           = "ami-03dac6c363b33b131" # Canonical Ubuntu 22.04 arm64 (us-east-1)
     instance_type = "t4g.micro"
-    whitelist_ips = ["0.0.0.0/0"]
+    whitelist_ips = []
   }
 
   key_name            = "mgx-deployer-key"
@@ -49,14 +49,14 @@ locals {
   nodes_ami = "ami-0a5b4fc05dc8ee0d1"
 
   # --- provisioning ----------------------------------------------------------
-  # This Terragrunt example always provisions via SSM (agentless). setup-node.sh
+  # This Terragrunt example provisions via SSM. setup-node.sh
   # is driven by SSM Run Command; nodes fetch secrets.env content from the SSM
   # SecureString at secrets_ssm_path (the NAT gateway gives them the egress they
-  # need to the SSM endpoints). The bastion above is NOT used for provisioning —
-  # it's only the SSH jump host for connecting to nodes (see README).
+  # need to the SSM endpoints). The same SSM access is used for interactive
+  # node sessions and private port forwarding (see README).
   #
   # (The terraform-aws-mgx modules also support provision_mode = "ssh"; this
-  # starter just standardizes on ssm.)
+  # starter standardizes on ssm.)
   #
   # Store secrets.env content in this SSM SecureString before applying:
   #   aws ssm put-parameter --type SecureString \

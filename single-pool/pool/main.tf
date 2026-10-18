@@ -1,4 +1,4 @@
-# A single storage pool — plain Terraform, SSH provisioning, no mgmt, no SSM.
+# A single storage pool — plain Terraform, SSM provisioning, no mgmt plane.
 # Apply this AFTER ../network. To run more than one pool, copy this directory
 # (each pool is an independent state) or just bump nodes_count.
 
@@ -80,15 +80,12 @@ module "pool" {
   # metrics replica. (Set false only when attaching the pool to a mgmt plane.)
   cross_peer_scrape = true
 
-  # --- provisioning: SSH over the bastion (no SSM) ---------------------------
-  # provision_mode defaults to "ssh": Terraform connects through the bastion,
-  # uploads secrets.env from this dir, writes pool_info.json + ip lists, and runs
-  # the baked setup-node.sh. Create the secret first:
-  #   cp ../secrets.env.example secrets.env   # then fill in real values
-  provision_mode       = "ssh"
-  ssh_user             = "ubuntu"
-  ssh_private_key_path = "~/.ssh/id_rsa"
-  secrets_file_path    = "secrets.env"
+  # --- provisioning: SSM Run Command -----------------------------------------
+  # Store secrets.env as an SSM SecureString before applying. setup-node.sh and
+  # the per-node configuration are delivered through Systems Manager; nodes
+  # need outbound access to the SSM endpoints (provided by the network NAT).
+  provision_mode   = "ssm"
+  secrets_ssm_path = "/mgx/main/secrets"
 }
 
 output "node_mgmt_private_ips" { value = module.pool.node_mgmt_private_ips }
