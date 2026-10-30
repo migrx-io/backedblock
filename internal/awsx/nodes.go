@@ -2,11 +2,7 @@ package awsx
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -154,39 +150,4 @@ func (c *Client) Exec(ctx context.Context, ids []string, command string, timeout
 		})
 	}
 	return res, nil
-}
-
-// ErrNoSessionPlugin means interactive sessions need the Session Manager plugin.
-var ErrNoSessionPlugin = errors.New("session-manager-plugin not found on PATH")
-
-// Session opens an interactive shell (localPort == 0) or forwards localPort
-// to remotePort on the instance. It hands the SSM session to the Session
-// Manager plugin, the same way the aws CLI does.
-func (c *Client) Session(ctx context.Context, id string, remotePort, localPort int, profile string) error {
-	plugin, err := exec.LookPath("session-manager-plugin")
-	if err != nil {
-		return ErrNoSessionPlugin
-	}
-	in := &ssm.StartSessionInput{Target: aws.String(id)}
-	if localPort > 0 {
-		in.DocumentName = aws.String("AWS-StartPortForwardingSession")
-		in.Parameters = map[string][]string{
-			"portNumber":      {fmt.Sprint(remotePort)},
-			"localPortNumber": {fmt.Sprint(localPort)},
-		}
-	}
-	out, err := c.SSM.StartSession(ctx, in)
-	if err != nil {
-		return err
-	}
-	resp, _ := json.Marshal(map[string]string{
-		"SessionId":  aws.ToString(out.SessionId),
-		"TokenValue": aws.ToString(out.TokenValue),
-		"StreamUrl":  aws.ToString(out.StreamUrl),
-	})
-	params, _ := json.Marshal(in)
-	endpoint := fmt.Sprintf("https://ssm.%s.amazonaws.com", c.Region())
-	cmd := exec.CommandContext(ctx, plugin, string(resp), c.Region(), "StartSession", profile, string(params), endpoint)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
 }

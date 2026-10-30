@@ -2,16 +2,16 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
-	"github.com/migrx-io/backedblock/internal/awsx"
 	"github.com/migrx-io/backedblock/internal/deploy"
 	"github.com/migrx-io/backedblock/internal/render"
 	"github.com/migrx-io/backedblock/internal/ui"
@@ -211,7 +211,7 @@ func (a *app) execCmd() *cobra.Command {
 		Short: "Run a shell command on nodes through SSM (non-interactive)",
 		Long: `exec runs a command as root on one node (default) or every node of a stack
 (--all) through SSM Run Command and returns its exit code and output. It needs
-no SSH, bastion or Session Manager plugin, which makes it the way for scripts
+no SSH or bastion and no terminal, which makes it the way for scripts
 and agents to operate the cluster. Exit code is 1 if the command failed on
 any node.`,
 		Example: `  bbctl exec -- uptime
@@ -275,8 +275,9 @@ func (a *app) connectCmd() *cobra.Command {
 --forward a local port forward (e.g. Grafana on 3000). Nodes have no public IP;
 nothing inbound is opened. Run mgx-cli in the shell to manage the cluster.
 
-Interactive sessions currently need the AWS Session Manager plugin. For
-non-interactive commands use ` + "`bbctl exec`" + `, which does not.`,
+The Session Manager protocol is built into bbctl: nothing else to install. A
+shell needs a terminal; for scripts and agents use ` + "`bbctl exec`" + `, which runs
+a command and returns its output. --forward runs until Ctrl-C.`,
 		Example: `  bbctl connect
   bbctl connect --pool pool2 --node 1
   bbctl connect --forward 3000            # Grafana at http://localhost:3000
@@ -294,6 +295,10 @@ non-interactive commands use ` + "`bbctl exec`" + `, which does not.`,
 			if err := d.Prepare(ctx, deploy.BucketRequire); err != nil {
 				return err
 			}
+			if local == 0 && !term.IsTerminal(int(os.Stdin.Fd())) {
+				return ui.Errf(ui.ExitUsage, "use `bbctl exec -- '<command>'` to run a command without a terminal",
+					"an interactive shell needs a terminal")
+			}
 			ids, err := t.resolve(ctx, d)
 			if err != nil {
 				return err
@@ -303,11 +308,11 @@ non-interactive commands use ` + "`bbctl exec`" + `, which does not.`,
 			} else {
 				ui.Logf("connecting to %s", ids[0])
 			}
-			err = d.AWS.Session(ctx, ids[0], remote, local, a.profile)
-			if errors.Is(err, awsx.ErrNoSessionPlugin) {
-				return ui.Wrap(ui.ExitError, "install it: https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html (or use `bbctl exec`)", err)
+			// Does not return on success: the session ends the process.
+			if err := d.AWS.Session(ctx, ids[0], remote, local, a.profile); err != nil {
+				return ui.Wrap(ui.ExitAWS, "check `bbctl status`: the node must be running with ssm=Online", err)
 			}
-			return err
+			return nil
 		},
 	}
 	t.flags(cmd, false)

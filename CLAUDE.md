@@ -62,6 +62,13 @@ Each of these fixed a real bug or review finding. Keep them.
   plus extras, minus `tfexec.ProhibitedEnv`.
 - **Commands are safe to re-run.** Errors carry a hint naming the next
   command.
+- **Session Manager is built in.** `awsx.Session` calls the official
+  session-manager-plugin's entry point (`session.ValidateInputAndStartSession`)
+  in-process, with the argv the aws CLI would pass the plugin binary. On
+  success it never returns, because the plugin `os.Exit(0)`s when the session
+  closes, so `connect` must do nothing after it. The plugin module has no
+  go.mod: its deps live in ours, and `github.com/twinj/uuid` is pinned to a
+  pre-v1 pseudo-version that it needs. Don't bump it.
 - **The management plane is explicit.** It's only added by `init --mgmt` or
   `pool add --with-mgmt`, never automatically. Several pools without mgmt is
   a valid layout: independent pools, each with its own API and Grafana.

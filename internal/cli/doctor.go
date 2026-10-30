@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -128,11 +127,6 @@ func (a *app) runDoctor(ctx context.Context) []check {
 		}
 	}
 
-	if _, err := exec.LookPath("session-manager-plugin"); err != nil {
-		add("session manager plugin", "warn", "not installed", "only `bbctl connect` needs it; `bbctl exec` works without")
-	} else {
-		add("session manager plugin", "ok", "installed", "")
-	}
 	return cs
 }
 

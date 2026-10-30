@@ -198,8 +198,9 @@ its plugins. `enable_grafana` adds Grafana on the cluster's VIP node.
 
 `bbctl` is a single binary that deploys the whole storage cluster. It downloads
 the Terraform version and modules it needs, talks to AWS through the SDK, and
-reaches nodes over SSM, so you don't need Terraform, Terragrunt, the AWS CLI
-or git. **You only need AWS credentials.**
+reaches nodes over SSM with Session Manager built in, so you don't need
+Terraform, Terragrunt, the AWS CLI, git or the Session Manager plugin. **You
+only need AWS credentials.**
 
 ```bash
 # Linux / macOS
@@ -231,8 +232,8 @@ Day-2 commands:
 
 | Command | What it does |
 |---|---|
-| `bbctl exec [--all] -- CMD` | run a shell command on nodes via SSM Run Command and return its output and exit code; no SSH and no plugin |
-| `bbctl connect [--forward 3000]` | interactive shell or port forward (Grafana) via Session Manager |
+| `bbctl exec [--all] -- CMD` | run a shell command on nodes via SSM Run Command and return its output and exit code; no SSH and no terminal |
+| `bbctl connect [--forward 3000]` | interactive shell or port forward (Grafana) via Session Manager, built in; no plugin to install |
 | `bbctl secrets get MGX_GW_ADMIN_PASSWD` | the `mgx-cli` admin password |
 | `bbctl plan` / `bbctl destroy` | preview, or tear down in reverse order |
 | `bbctl render` | write the generated Terraform to `.bbctl/stacks/` for review |
