@@ -129,7 +129,7 @@ func (d *Deployment) Runner(ctx context.Context, s render.Stack) (*tf.Runner, er
 }
 
 func (d *Deployment) runnerIn(ctx context.Context, s render.Stack, dir string) (*tf.Runner, error) {
-	r, err := tf.NewRunner(d.terraform, dir)
+	r, err := tf.NewRunner(d.terraform, dir, d.Profile)
 	if err != nil {
 		return nil, err
 	}

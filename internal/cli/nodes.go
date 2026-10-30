@@ -76,7 +76,7 @@ func waitProvisioned(ctx context.Context, d *deploy.Deployment, st []deploy.Stac
 		for _, s := range st {
 			for _, n := range s.Nodes {
 				if n.ProvisionFailed() {
-					e := ui.Errf(ui.ExitError, fmt.Sprintf("inspect the node with `bbctl exec --node %s -- 'journalctl -n 200 --no-pager'`; fix and re-run `bbctl apply`", n.InstanceID),
+					e := ui.Errf(ui.ExitError, fmt.Sprintf("inspect the node with `bbctl exec %s --node %s -- 'journalctl -n 200 --no-pager'`; fix and re-run `bbctl apply`", stackFlag(s.ID), n.InstanceID),
 						"%s: provisioning failed on %s", s.ID, n.InstanceID)
 					if n.ProvisionDetail != "" {
 						e.Details = []string{n.ProvisionDetail}
@@ -143,7 +143,7 @@ func (t *target) flags(cmd *cobra.Command, allowAll bool) {
 	f := cmd.Flags()
 	f.StringVar(&t.pool, "pool", "", "target a pool's nodes (default: the first pool)")
 	f.BoolVar(&t.mgmt, "mgmt", false, "target the management plane's nodes")
-	f.StringVar(&t.node, "node", "", "node index (0-based) or instance ID (default: first SSM-online node)")
+	f.StringVar(&t.node, "node", "", "node index (0-based) within the stack, or an instance ID from any stack (default: first SSM-online node)")
 	if allowAll {
 		f.BoolVar(&t.all, "all", false, "every node of the stack")
 	}
@@ -151,6 +151,11 @@ func (t *target) flags(cmd *cobra.Command, allowAll bool) {
 
 // resolve returns the instance IDs to act on.
 func (t *target) resolve(ctx context.Context, d *deploy.Deployment) ([]string, error) {
+	// An instance ID names one node in the whole deployment, so without
+	// --pool/--mgmt it is looked up in every stack, not just the first pool.
+	if strings.HasPrefix(t.node, "i-") && !t.mgmt && t.pool == "" {
+		return t.findInstance(ctx, d)
+	}
 	var stack *render.Stack
 	for i, s := range d.Stacks {
 		switch {
@@ -201,6 +206,40 @@ func (t *target) resolve(ctx context.Context, d *deploy.Deployment) ([]string, e
 		}
 	}
 	return nil, ui.Errf(ui.ExitAWS, "check `bbctl status`; nodes need outbound access to SSM through the NAT gateway", "no node of %s is online in SSM", stack.ID)
+}
+
+// findInstance looks for t.node in every applied pool and mgmt stack.
+func (t *target) findInstance(ctx context.Context, d *deploy.Deployment) ([]string, error) {
+	for _, s := range d.Stacks {
+		if s.Kind == render.KindNetwork {
+			continue
+		}
+		applied, err := d.AWS.StateExists(ctx, d.Cfg.State.Bucket, s.StateKey)
+		if err != nil {
+			return nil, ui.Wrap(ui.ExitAWS, "", err)
+		}
+		if !applied {
+			continue
+		}
+		out, err := d.Outputs(ctx, s)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range deploy.InstanceIDs(out) {
+			if id == t.node {
+				return []string{id}, nil
+			}
+		}
+	}
+	return nil, ui.Errf(ui.ExitUsage, "`bbctl status` lists every node with its instance ID", "%s is not a node of this deployment", t.node)
+}
+
+// stackFlag is the --pool/--mgmt flag that selects a stack by ID.
+func stackFlag(id string) string {
+	if id == "mgmt" {
+		return "--mgmt"
+	}
+	return "--pool " + strings.TrimPrefix(id, "pool/")
 }
 
 func (a *app) execCmd() *cobra.Command {

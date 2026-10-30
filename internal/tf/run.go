@@ -20,7 +20,10 @@ type Runner struct {
 	dir string
 }
 
-func NewRunner(execPath, dir string) (*Runner, error) {
+// NewRunner prepares Terraform for one stack. profile is bbctl's --profile;
+// Terraform's provider and S3 backend must use the same AWS account as bbctl's
+// own SDK calls, so it is passed on (see terraformEnv).
+func NewRunner(execPath, dir, profile string) (*Runner, error) {
 	t, err := tfexec.NewTerraform(dir, execPath)
 	if err != nil {
 		return nil, err
@@ -31,22 +34,14 @@ func NewRunner(execPath, dir string) (*Runner, error) {
 	t.SetStderr(os.Stderr)
 
 	// Share one provider cache across stacks and runs.
-	env := map[string]string{}
-	for _, kv := range os.Environ() {
-		if k, v, ok := strings.Cut(kv, "="); ok {
-			env[k] = v
-		}
-	}
-	for _, k := range tfexec.ProhibitedEnv(env) {
-		delete(env, k)
-	}
+	pluginCache := ""
 	if cache, err := CacheDir(); err == nil {
 		pc := filepath.Join(cache, "plugins")
 		if os.MkdirAll(pc, 0o755) == nil {
-			env["TF_PLUGIN_CACHE_DIR"] = pc
+			pluginCache = pc
 		}
 	}
-	if err := t.SetEnv(env); err != nil {
+	if err := t.SetEnv(terraformEnv(os.Environ(), profile, pluginCache)); err != nil {
 		return nil, err
 	}
 	return &Runner{tf: t, dir: dir}, nil
@@ -54,6 +49,40 @@ func NewRunner(execPath, dir string) (*Runner, error) {
 
 func (r *Runner) Init(ctx context.Context) error {
 	return r.tf.Init(ctx, tfexec.Reconfigure(true))
+}
+
+// staticCredentialEnv are the variables that would let Terraform use access
+// keys instead of the requested profile.
+var staticCredentialEnv = []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"}
+
+// terraformEnv builds Terraform's environment from bbctl's. tfexec.SetEnv
+// replaces the whole environment, so it starts from environ.
+//
+// With a profile, Terraform gets AWS_PROFILE and no static keys, so it
+// resolves the same credentials bbctl's SDK does for an explicit profile (the
+// SDK ranks an explicit profile above environment keys). Without one,
+// Terraform inherits the environment as-is, as bbctl's SDK does.
+func terraformEnv(environ []string, profile, pluginCache string) map[string]string {
+	env := map[string]string{}
+	for _, kv := range environ {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			env[k] = v
+		}
+	}
+	for _, k := range tfexec.ProhibitedEnv(env) {
+		delete(env, k)
+	}
+	if profile != "" {
+		env["AWS_PROFILE"] = profile
+		delete(env, "AWS_DEFAULT_PROFILE")
+		for _, k := range staticCredentialEnv {
+			delete(env, k)
+		}
+	}
+	if pluginCache != "" {
+		env["TF_PLUGIN_CACHE_DIR"] = pluginCache
+	}
+	return env
 }
 
 // Change is one resource in a plan.
