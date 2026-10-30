@@ -30,8 +30,8 @@ func NewRoot() *cobra.Command {
 		Use:   "bbctl",
 		Short: "Deploy and operate backedblock.io storage clusters on AWS",
 		Long: `bbctl deploys a backedblock.io storage cluster into your AWS account from a
-single bbctl.yaml. It downloads the Terraform version and modules it needs,
-so AWS credentials are the only prerequisite.
+single bbctl.yaml. It needs AWS credentials; it downloads Terraform and the
+modules itself.
 
   bbctl init                 discover your VPC and write bbctl.yaml
   bbctl secrets generate     create the node secrets in SSM
