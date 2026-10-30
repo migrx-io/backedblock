@@ -18,9 +18,19 @@ import (
 )
 
 func (a *app) statusCmd() *cobra.Command {
-	return &cobra.Command{
+	var wait bool
+	var timeout time.Duration
+	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show each stack's outputs and its nodes' EC2 and SSM state",
+		Short: "Show each stack's outputs and its nodes' EC2, SSM and provisioning state",
+		Long: `status lists every stack, its outputs, and for each node its EC2 state, its
+SSM agent status and the status of its provisioning run (setup-node.sh).
+
+apply returns as soon as the provisioning run is created; the nodes configure
+themselves afterwards. --wait polls until every node of every applied stack
+reports provision=Success, and fails as soon as one reports Failed.`,
+		Example: `  bbctl status
+  bbctl apply --auto-approve && bbctl status --wait --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			d, err := a.open(ctx)
@@ -34,7 +44,12 @@ func (a *app) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return ui.Result(map[string]any{"deployment": d.Cfg.Name, "region": d.Cfg.Region, "stacks": st}, func(w io.Writer) {
+			if wait {
+				if st, err = waitProvisioned(ctx, d, st, timeout); err != nil {
+					return err
+				}
+			}
+			return ui.Result(map[string]any{"deployment": d.Cfg.Name, "region": d.Cfg.Region, "provisioned": allProvisioned(st), "stacks": st}, func(w io.Writer) {
 				for _, s := range st {
 					state := "not applied"
 					if s.Applied {
@@ -42,12 +57,78 @@ func (a *app) statusCmd() *cobra.Command {
 					}
 					fmt.Fprintf(w, "%-16s %s\n", s.ID, state)
 					for _, n := range s.Nodes {
-						fmt.Fprintf(w, "  %-20s %-10s %-15s %-12s ssm=%s\n", n.InstanceID, n.State, n.PrivateIP, n.AZ, orNone(n.SSM))
+						fmt.Fprintf(w, "  %-20s %-10s %-15s %-12s ssm=%-14s provision=%s\n", n.InstanceID, n.State, n.PrivateIP, n.AZ, orNone(n.SSM), orNone(n.Provision))
 					}
 				}
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&wait, "wait", false, "wait until every node is provisioned")
+	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Minute, "how long --wait waits")
+	return cmd
+}
+
+// waitProvisioned polls Status until every node is provisioned, one fails, or
+// the timeout passes.
+func waitProvisioned(ctx context.Context, d *deploy.Deployment, st []deploy.StackStatus, timeout time.Duration) ([]deploy.StackStatus, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		for _, s := range st {
+			for _, n := range s.Nodes {
+				if n.ProvisionFailed() {
+					e := ui.Errf(ui.ExitError, fmt.Sprintf("inspect the node with `bbctl exec --node %s -- 'journalctl -n 200 --no-pager'`; fix and re-run `bbctl apply`", n.InstanceID),
+						"%s: provisioning failed on %s", s.ID, n.InstanceID)
+					if n.ProvisionDetail != "" {
+						e.Details = []string{n.ProvisionDetail}
+					}
+					return st, e
+				}
+			}
+		}
+		if allProvisioned(st) {
+			return st, nil
+		}
+		if time.Now().After(deadline) {
+			return st, ui.Errf(ui.ExitError, "re-run `bbctl status --wait` to keep waiting", "nodes not provisioned after %s", timeout)
+		}
+		ui.Logf("waiting for provisioning: %d/%d nodes done", countProvisioned(st), countNodes(st))
+		select {
+		case <-ctx.Done():
+			return st, ctx.Err()
+		case <-time.After(15 * time.Second):
+		}
+		var err error
+		if st, err = d.Status(ctx); err != nil {
+			return st, err
+		}
+	}
+}
+
+// allProvisioned is true when at least one stack is applied and every node of
+// every applied stack reports Success.
+func allProvisioned(st []deploy.StackStatus) bool {
+	n := countNodes(st)
+	return n > 0 && countProvisioned(st) == n
+}
+
+func countNodes(st []deploy.StackStatus) int {
+	n := 0
+	for _, s := range st {
+		n += len(s.Nodes)
+	}
+	return n
+}
+
+func countProvisioned(st []deploy.StackStatus) int {
+	n := 0
+	for _, s := range st {
+		for _, node := range s.Nodes {
+			if node.Provisioned() {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // target selects nodes of one stack.

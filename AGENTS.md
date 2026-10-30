@@ -28,7 +28,7 @@ bbctl secrets generate --json                # no-op ("exists") if already there
 bbctl doctor --json                          # every check must be "ok" or "warn"
 bbctl plan --json                            # show the human the plan
 bbctl apply --auto-approve --json            # 10-20 min
-bbctl status --json                          # nodes: state "running", ssm "Online"
+bbctl status --wait --json                   # until every node reports provision "Success"
 ```
 
 Before `apply`, get the human's approval. It creates billable EC2, EBS, NAT
@@ -41,7 +41,10 @@ Edit `bbctl.yaml`, then run `plan` and `apply`. Module variables that have
 no dedicated field go under a pool's `extra:` map, for example
 `cache_filesystem: xfs` or `scheduler_node_down_wait: 120`.
 
-- Add a pool: `bbctl pool add <name> [--az <az>] [--with-mgmt]`, then `apply`.
+- Add a pool: `bbctl pool add <name> [--az <az>]`, then `apply`. Without a
+  management plane each pool is independent, with its own API endpoints and
+  Grafana. `--with-mgmt` adds a management plane in front of all pools; after
+  that apply, the CSI driver points at the mgmt nodes.
 - Remove a pool: `bbctl pool remove <name> --auto-approve`. This **deletes its buckets
   and data**.
 - Limit to one stack: `--stack network|pool/<name>|mgmt`.

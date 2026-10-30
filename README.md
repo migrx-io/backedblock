@@ -217,12 +217,17 @@ bbctl init --region us-east-1     # finds VPC, AZs, free CIDRs, NAT subnet, node
 bbctl secrets generate            # random node secrets → SSM SecureString
 bbctl doctor                      # check everything apply needs
 bbctl apply                       # state bucket, network, pools, mgmt, in order
-bbctl status                      # nodes, EC2 state, SSM health
+bbctl status --wait               # until every node has finished provisioning
 ```
 
-One `bbctl.yaml` describes the deployment. Start with one pool. To add more,
-run `bbctl pool add pool2 --with-mgmt` (this adds a management plane), then
-`bbctl apply`. Day-2 commands:
+One `bbctl.yaml` describes the deployment. `init` writes one pool. Add more
+with `bbctl pool add pool2`, then `bbctl apply`:
+- **Without a management plane**, each pool is independent, with its own API
+  endpoints and Grafana.
+- **`--with-mgmt`** adds a management plane (`init --mgmt` does it from the
+  start). It presents one API for every pool and federates their metrics.
+
+Day-2 commands:
 
 | Command | What it does |
 |---|---|

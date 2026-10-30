@@ -29,11 +29,15 @@ func (a *app) poolAddCmd() *cobra.Command {
 		Use:   "add NAME",
 		Short: "Add a pool to bbctl.yaml (then run bbctl apply)",
 		Long: `add appends a pool with the default sizing; edit bbctl.yaml to change it.
-More than one pool needs a management plane: pass --with-mgmt to add one.
-Adding mgmt switches existing pools to mgmt-federated metrics, which
-re-provisions their nodes on the next apply.`,
-		Example: `  bbctl pool add pool2 --az us-east-1b
-  bbctl pool add pool2 --with-mgmt && bbctl apply`,
+
+Without a management plane each pool is independent: its own API endpoints,
+its own Grafana and a full metrics replica on every node. --with-mgmt adds a
+management plane (if there is none), which presents one API for every pool
+and federates their metrics. Adding it switches existing pools to
+mgmt-federated metrics and moves Grafana to mgmt, which re-provisions their
+nodes on the next apply; the CSI driver then points at the mgmt nodes.`,
+		Example: `  bbctl pool add pool2 --az us-east-1b             # an independent pool
+  bbctl pool add pool2 --with-mgmt && bbctl apply   # pools behind a management plane`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := a.load()
@@ -44,10 +48,8 @@ re-provisions their nodes on the next apply.`,
 			if _, ok := c.Pool(name); ok {
 				return ui.Errf(ui.ExitUsage, "", "pool %q already exists", name)
 			}
-			if c.Mgmt == nil && len(c.Pools) >= 1 {
-				if !withMgmt {
-					return ui.Errf(ui.ExitUsage, "re-run with --with-mgmt", "a second pool needs a management plane")
-				}
+			mgmtAdded := withMgmt && c.Mgmt == nil
+			if mgmtAdded {
 				c.Mgmt = config.DefaultMgmt()
 				for i := range c.Pools {
 					c.Pools[i].EnableGrafana = false
@@ -72,6 +74,8 @@ re-provisions their nodes on the next apply.`,
 			if nodes > 0 {
 				p.NodesCount = nodes
 			}
+			// An independent pool runs its own Grafana; under mgmt it runs there.
+			p.EnableGrafana = c.Mgmt == nil
 			c.Pools = append(c.Pools, p)
 			if errs := c.Validate(); len(errs) > 0 {
 				e := ui.Errf(ui.ExitUsage, "", "pool %q would make the config invalid", name)
@@ -81,8 +85,23 @@ re-provisions their nodes on the next apply.`,
 			if err := c.Save(a.configPath); err != nil {
 				return err
 			}
-			return ui.Result(map[string]any{"pool": p, "mgmt": c.Mgmt != nil, "next": "bbctl apply"}, func(w io.Writer) {
-				fmt.Fprintf(w, "added %s: %d x %s in %s\nnext: bbctl apply\n", p.Name, p.NodesCount, p.InstanceType, p.AZ)
+			var notes []string
+			if mgmtAdded {
+				notes = []string{
+					fmt.Sprintf("added a management plane (%d x %s)", c.Mgmt.NodesCount, c.Mgmt.InstanceType),
+					"existing pools switch to mgmt-federated metrics and Grafana moves to mgmt; their nodes re-provision on apply",
+					"after apply, point the CSI driver at the mgmt nodes (outputs.node_private_ips of the mgmt stack in `bbctl status --json`)",
+				}
+			} else if c.Mgmt == nil {
+				notes = []string{"independent pool: its own API endpoints (outputs.node_mgmt_private_ips of pool/" + p.Name + ") and its own Grafana"}
+			}
+			res := map[string]any{"pool": p, "mgmt": c.Mgmt != nil, "mgmt_added": mgmtAdded, "notes": notes, "next": "bbctl apply"}
+			return ui.Result(res, func(w io.Writer) {
+				fmt.Fprintf(w, "added %s: %d x %s in %s\n", p.Name, p.NodesCount, p.InstanceType, p.AZ)
+				for _, n := range notes {
+					fmt.Fprintf(w, "  - %s\n", n)
+				}
+				fmt.Fprintln(w, "next: bbctl apply")
 			})
 		},
 	}
@@ -90,7 +109,7 @@ re-provisions their nodes on the next apply.`,
 	f.StringVar(&az, "az", "", "AZ for the pool (one of network.azs; default: round-robin)")
 	f.StringVar(&instanceType, "instance-type", "", "node instance type (default "+config.DefaultInstanceType+")")
 	f.IntVar(&nodes, "nodes", 0, fmt.Sprintf("node count (default %d)", config.DefaultNodesCount))
-	f.BoolVar(&withMgmt, "with-mgmt", false, "add a management plane if there is none")
+	f.BoolVar(&withMgmt, "with-mgmt", false, "also add a management plane if there is none")
 	return cmd
 }
 

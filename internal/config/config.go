@@ -279,9 +279,6 @@ func (c *Config) Validate() []string {
 	if len(c.Pools) == 0 {
 		add("pools: at least one pool is required")
 	}
-	if c.Mgmt == nil && len(c.Pools) > 1 {
-		add("pools: more than one pool needs a management plane (add a mgmt section)")
-	}
 	seen := map[string]bool{}
 	buckets := map[string]string{}
 	for i, p := range c.Pools {

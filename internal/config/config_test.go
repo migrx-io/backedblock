@@ -30,7 +30,11 @@ func TestValidate(t *testing.T) {
 	c.Pools = append(c.Pools, DefaultPool("bb", "123456789012", "pool2", "us-east-1b"))
 	c.Pools[1].S3BucketNames = c.Pools[0].S3BucketNames
 	errs := strings.Join(c.Validate(), "\n")
-	for _, want := range []string{"needs a management plane", "not one of network.azs", "already used by pool"} {
+	// Independent pools without a management plane are a valid layout.
+	if strings.Contains(errs, "management plane") {
+		t.Errorf("two pools without mgmt must be valid:\n%s", errs)
+	}
+	for _, want := range []string{"not one of network.azs", "already used by pool"} {
 		if !strings.Contains(errs, want) {
 			t.Errorf("missing %q in:\n%s", want, errs)
 		}

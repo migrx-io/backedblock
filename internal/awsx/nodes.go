@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -24,7 +25,18 @@ type Node struct {
 	// SSM is the agent's ping status: Online, ConnectionLost, Inactive or
 	// empty if the instance never registered.
 	SSM string `json:"ssm"`
+	// Provision is the status of the node's setup-node.sh association
+	// (mgx-<role>-<instance>): Success, Failed, Pending, or empty if it has not
+	// reported yet. Apply returns before it finishes.
+	Provision       string `json:"provision"`
+	ProvisionDetail string `json:"provision_detail,omitempty"`
 }
+
+// Provisioned reports whether setup-node.sh finished successfully.
+func (n Node) Provisioned() bool { return n.Provision == "Success" }
+
+// ProvisionFailed reports whether setup-node.sh failed on the node.
+func (n Node) ProvisionFailed() bool { return n.Provision == "Failed" }
 
 // Nodes describes instances and their SSM agent status, in the given order.
 func (c *Client) Nodes(ctx context.Context, ids []string) ([]Node, error) {
@@ -65,11 +77,39 @@ func (c *Client) Nodes(ctx context.Context, ids []string) ([]Node, error) {
 	}
 	res := make([]Node, 0, len(ids))
 	for _, id := range ids {
-		if n, ok := byID[id]; ok {
-			res = append(res, n)
+		n, ok := byID[id]
+		if !ok {
+			continue
 		}
+		if n.Provision, n.ProvisionDetail, err = c.provisionStatus(ctx, id); err != nil {
+			return nil, err
+		}
+		res = append(res, n)
 	}
 	return res, nil
+}
+
+// provisionStatus reads the status of the node's mgx-* association, the one
+// that runs setup-node.sh.
+func (c *Client) provisionStatus(ctx context.Context, id string) (status, detail string, err error) {
+	p := ssm.NewDescribeInstanceAssociationsStatusPaginator(c.SSM, &ssm.DescribeInstanceAssociationsStatusInput{InstanceId: aws.String(id)})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return "", "", fmt.Errorf("provisioning status of %s: %w", id, err)
+		}
+		for _, a := range page.InstanceAssociationStatusInfos {
+			if !strings.HasPrefix(aws.ToString(a.AssociationName), "mgx-") {
+				continue
+			}
+			status = aws.ToString(a.Status)
+			if status != "Success" {
+				detail = strings.TrimSpace(aws.ToString(a.DetailedStatus) + " " + aws.ToString(a.ErrorCode))
+			}
+			return status, detail, nil
+		}
+	}
+	return "", "", nil
 }
 
 type ExecResult struct {

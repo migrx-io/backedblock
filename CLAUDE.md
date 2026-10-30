@@ -62,6 +62,10 @@ Each of these fixed a real bug or review finding. Keep them.
   plus extras, minus `tfexec.ProhibitedEnv`.
 - **Commands are safe to re-run.** Errors carry a hint naming the next
   command.
+- **The management plane is explicit.** It's only added by `init --mgmt` or
+  `pool add --with-mgmt`, never automatically. Several pools without mgmt is
+  a valid layout: independent pools, each with its own API and Grafana.
+  `cross_peer_scrape` and the pools' Grafana follow whether `mgmt` exists.
 
 ## Develop
 
