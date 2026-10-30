@@ -275,8 +275,8 @@ bbctl connect --node i-0123456789abcdef0 --forward 3000   # http://localhost:300
 - AWS credentials with EC2, IAM, VPC, S3, and SSM permissions
 - An existing VPC with a public subnet for the NAT gateway. `bbctl init` finds
   both.
-- Access to the prebaked node AMI in your region. `bbctl init` picks the latest
-  one; the published IDs are in [Node AMIs](https://backedblock.io/docs/node-amis).
+- Access to the prebaked node AMI in your region. `bbctl init` picks the one
+  listed for your region in [Node AMIs](https://backedblock.io/docs/node-amis).
 
 To call the modules from your own Terraform instead, see
 [`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx). `bbctl render`

@@ -212,38 +212,6 @@ func (c *Client) Arch(ctx context.Context, instanceType string) (string, error) 
 	return "", fmt.Errorf("instance type %s: unsupported architecture", instanceType)
 }
 
-// AMIOwner is the account that publishes the prebaked node images.
-const AMIOwner = "222757277183"
-
-type Image struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Arch    string `json:"arch"`
-	Created string `json:"created"`
-}
-
-// LatestNodeAMI finds the newest published node image for an architecture.
-func (c *Client) LatestNodeAMI(ctx context.Context, arch string) (Image, error) {
-	out, err := c.EC2.DescribeImages(ctx, &ec2.DescribeImagesInput{
-		Owners: []string{AMIOwner},
-		Filters: []types.Filter{
-			{Name: aws.String("name"), Values: []string{"mgx-storage-*-" + arch + "-*"}},
-			{Name: aws.String("state"), Values: []string{"available"}},
-		},
-	})
-	if err != nil {
-		return Image{}, err
-	}
-	if len(out.Images) == 0 {
-		return Image{}, fmt.Errorf("no %s node AMI visible in %s", arch, c.Region())
-	}
-	sort.Slice(out.Images, func(i, j int) bool {
-		return aws.ToString(out.Images[i].CreationDate) > aws.ToString(out.Images[j].CreationDate)
-	})
-	im := out.Images[0]
-	return Image{ID: aws.ToString(im.ImageId), Name: aws.ToString(im.Name), Arch: string(im.Architecture), Created: aws.ToString(im.CreationDate)}, nil
-}
-
 // Image describes one AMI, or errors if it is not visible to the account.
 func (c *Client) Image(ctx context.Context, id string) (Image, error) {
 	out, err := c.EC2.DescribeImages(ctx, &ec2.DescribeImagesInput{ImageIds: []string{id}})

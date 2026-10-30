@@ -29,8 +29,9 @@ func (a *app) initCmd() *cobra.Command {
 		Short: "Discover AWS values and write bbctl.yaml",
 		Long: `init looks up everything bbctl.yaml needs in your AWS account: the VPC, AZs
 where the instance type is offered, free subnet CIDRs, a public subnet for the
-NAT gateway and the latest node AMI. It writes a config you can review and
-edit before ` + "`bbctl apply`" + `. Flags override any discovered value.`,
+NAT gateway, and the node AMI listed at https://backedblock.io/docs/node-amis
+for the region. It writes a config you can review and edit before
+` + "`bbctl apply`" + `. Flags override any discovered value.`,
 		Example: `  bbctl init --region us-east-1
   bbctl init --region eu-west-1 --vpc vpc-0abc --mgmt --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -133,7 +134,7 @@ func (a *app) runInit(ctx context.Context, o initOpts) error {
 		if err != nil {
 			return ui.Wrap(ui.ExitAWS, "", err)
 		}
-		im, err := c.LatestNodeAMI(ctx, arch)
+		im, err := awsx.PublishedAMI(ctx, c.Region(), arch)
 		if err != nil {
 			return ui.Wrap(ui.ExitAWS, "pass --ami; published IDs are at https://backedblock.io/docs/node-amis", err)
 		}

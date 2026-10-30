@@ -30,16 +30,12 @@ func NewRoot() *cobra.Command {
 		Use:   "bbctl",
 		Short: "Deploy and operate backedblock.io storage clusters on AWS",
 		Long: `bbctl deploys a backedblock.io storage cluster into your AWS account from a
-single bbctl.yaml. It needs AWS credentials; it downloads Terraform and the
-modules itself.
+single bbctl.yaml.
 
-  bbctl init                 discover your VPC and write bbctl.yaml
+  bbctl init                 discover AWS values and write bbctl.yaml
   bbctl secrets generate     create the node secrets in SSM
   bbctl apply                create everything
-  bbctl status               nodes and their health
-
-Every command accepts --json: results go to stdout as JSON, progress goes to
-stderr, and the exit code says what failed (2 config, 3 AWS, 4 terraform).`,
+  bbctl status               nodes and their health`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       Version,

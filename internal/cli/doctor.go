@@ -188,7 +188,7 @@ func checkAMI(ctx context.Context, c *awsx.Client, cfg *config.Config) (string, 
 			return "node ami", "fail", fmt.Sprintf("%s is %s but %s is %s", cfg.NodesAMI, im.Arch, t, arch), "use an AMI matching the instance architecture"
 		}
 	}
-	latest, err := c.LatestNodeAMI(ctx, im.Arch)
+	latest, err := awsx.PublishedAMI(ctx, c.Region(), im.Arch)
 	if err == nil && latest.ID != im.ID && latest.Created > im.Created {
 		return "node ami", "warn", fmt.Sprintf("%s (%s); newer: %s", im.ID, im.Name, latest.ID), "set nodes_ami: " + latest.ID + " to upgrade"
 	}

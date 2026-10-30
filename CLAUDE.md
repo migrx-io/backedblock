@@ -106,6 +106,7 @@ paths without creating anything, write a throwaway `_test.go` that swaps in
 a declining approver or a failing S3 client, then delete it.
 
 Useful env vars: `BBCTL_TERRAFORM` (use a given binary), `BBCTL_CACHE_DIR`,
+`BBCTL_AMIS_URL` (read the published AMI list from elsewhere),
 `GITHUB_TOKEN` (raises the GitHub rate limit for module ref resolution). To
 develop against local modules, set `modules.path` in `bbctl.yaml` to a
 checkout such as `../terraform-aws-mgx`.
@@ -115,7 +116,9 @@ checkout such as `../terraform-aws-mgx`.
 - `terraform-aws-mgx`: the modules bbctl renders against. When a module
   variable changes, update `render.go` and `config.go` together.
 - `mgx-packer`: builds the node AMIs. Names are
-  `mgx-storage-ubuntu<ver>-<arch>-<ts>`, owner `awsx.AMIOwner`.
+  `mgx-storage-ubuntu<ver>-<arch>-<ts>`. bbctl doesn't search EC2 for them:
+  `init` and `doctor` read https://backedblock.io/amis.json, which
+  `make update-amis` in `backedblock.io` writes along with the docs table.
 - `backedblock.io`: the website and docs.
 - `mgx-csi-driver`: the Kubernetes half of the install.
 
