@@ -1,0 +1,30 @@
+version: 2
+
+builds:
+  - id: bbctl
+    main: ./cmd/bbctl
+    binary: bbctl
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/migrx-io/backedblock/internal/cli.Version={{.Version}}
+
+archives:
+  - id: bbctl
+    name_template: "bbctl_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+# Homebrew: create migrx-io/homebrew-tap, then uncomment.
+# brews:
+#   - repository:
+#       owner: migrx-io
+#       name: homebrew-tap
+#     homepage: https://backedblock.io
+#     description: Deploy and operate backedblock.io storage clusters on AWS

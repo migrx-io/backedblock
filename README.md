@@ -23,8 +23,9 @@ thin-provisioned, the local disks only have to hold the working set, and what a
 pod gets is `/dev/nvmeXnY` with a filesystem on it. Nothing to port, no
 object-storage semantics leaking into the application.
 
-**This repository is how you deploy it.** Two ready-to-edit Terraform
-blueprints for the storage cluster, over the modules in
+**This repository is how you deploy it:** `bbctl`, a single-binary CLI that
+creates the whole storage cluster in your AWS account from one config file. It
+drives the Terraform modules in
 [`migrx-io/terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx).
 Full docs at **[backedblock.io/docs](https://backedblock.io/docs)**.
 
@@ -115,7 +116,7 @@ the S3 group.
 > it.
 
 Those EC2 nodes, their cache disks and their buckets are one **pool** — the unit
-volumes are placed in and served from. Terraform creates:
+volumes are placed in and served from. bbctl creates, through Terraform:
 
 - **Two subnets per AZ, one network each way.** The *mgmt* subnet carries control
   traffic — the management API on `8082`, optional SSH, and metrics — and the
@@ -135,7 +136,7 @@ volumes are placed in and served from. Terraform creates:
 ## What do the nodes run
 
 Every node boots a **prebaked AMI** with all the applications a storage cluster
-needs already compiled and installed. Terraform installs no software: it delivers
+needs already compiled and installed. Provisioning installs no software: it delivers
 the per-node inputs (secrets, peer addresses, the pool registry) and runs the
 baked `setup-node.sh` in place.
 
@@ -195,34 +196,85 @@ its plugins. `enable_grafana` adds Grafana on the cluster's VIP node.
 
 ## Install
 
-### Deployment layouts
+`bbctl` is a single binary that deploys the whole storage cluster. It downloads
+the Terraform version and modules it needs, talks to AWS through the SDK, and
+reaches nodes over SSM, so you don't need Terraform, Terragrunt, the AWS CLI
+or git. **You only need AWS credentials.**
 
-Pick the blueprint that matches your scale — they're independent, each in its own
-directory.
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/migrx-io/backedblock/main/install.sh | sh
 
-|  | [`single-pool/`](single-pool) | [`terragrunt-scale/`](terragrunt-scale) |
-|---|---|---|
-| **Use when** | one pool, a lab, a PoC | many pools, a real fleet |
-| **Tooling** | plain Terraform | [Terragrunt](https://terragrunt.gruntwork.io/) (DRY, `run --all`) |
-| **Topology** | 1 storage pool | management plane + N storage pools |
-| **Provisioning** | SSM Run Command | SSM Run Command |
-| **Secrets** | SSM SecureString | SSM SecureString |
-| **Pool discovery** | n/a (single pool) | pools auto-discovered via SSM Parameter Store |
-| **State** | local (per stack) | S3 backend (per unit) |
-| **Bastion** | disabled by default; optional for SSH | disabled by default; optional for SSH |
+# Windows: download bbctl_windows_amd64.zip (or _arm64) from
+# https://github.com/migrx-io/backedblock/releases/latest and put bbctl.exe on your PATH
 
-- **Just want one pool running?** → [`single-pool/`](single-pool). Two
-  `terraform apply`s (network, then pool), no Terragrunt. Provisioning and
-  operator access use SSM; the bastion is optional.
+# Any OS with Go
+go install github.com/migrx-io/backedblock/cmd/bbctl@latest
+```
 
-- **Running a fleet?** → [`terragrunt-scale/`](terragrunt-scale). Each pool is a
-  ~25-line `terragrunt.hcl`, `run --all` builds the dependency graph, a mgmt
-  plane auto-discovers every pool, and provisioning and operator access use SSM.
+```bash
+bbctl init --region us-east-1     # finds VPC, AZs, free CIDRs, NAT subnet, node AMI → bbctl.yaml
+bbctl secrets generate            # random node secrets → SSM SecureString
+bbctl doctor                      # check everything apply needs
+bbctl apply                       # state bucket, network, pools, mgmt, in order
+bbctl status                      # nodes, EC2 state, SSM health
+```
 
-You'll need Terraform >= 1.4, AWS credentials with EC2, IAM, VPC, S3, and SSM
-permissions, an existing VPC with a public subnet for the NAT gateway, and a
-prebaked node AMI for `nodes_ami` — the published ID for your region is in
-[Node AMIs](https://backedblock.io/docs/node-amis).
+One `bbctl.yaml` describes the deployment. Start with one pool. To add more,
+run `bbctl pool add pool2 --with-mgmt` (this adds a management plane), then
+`bbctl apply`. Day-2 commands:
+
+| Command | What it does |
+|---|---|
+| `bbctl exec [--all] -- CMD` | run a shell command on nodes via SSM Run Command and return its output and exit code; no SSH and no plugin |
+| `bbctl connect [--forward 3000]` | interactive shell or port forward (Grafana) via Session Manager |
+| `bbctl secrets get MGX_GW_ADMIN_PASSWD` | the `mgx-cli` admin password |
+| `bbctl plan` / `bbctl destroy` | preview, or tear down in reverse order |
+| `bbctl render` | write the generated Terraform to `.bbctl/stacks/` for review |
+
+**Scripts and agents:** every command takes `--json`. The result goes to
+stdout, progress and Terraform logs go to stderr, and failures come back as
+`{"error", "hint", "code"}`. Exit codes: 2 config, 3 AWS, 4 Terraform, 5 declined.
+Prompts are never shown without a TTY. `apply` and `destroy` need
+`--auto-approve` instead. Every command is safe to re-run. See
+[`AGENTS.md`](AGENTS.md).
+
+### Managing the cluster with mgx-cli
+
+Every node ships `mgx-cli`, and the nodes of a pool are equivalent members of
+one cluster, so any node can drive the whole thing:
+
+```
+$ bbctl secrets get MGX_GW_ADMIN_PASSWD    # the login password
+$ bbctl connect                            # shell on a node over Session Manager
+$ mgx-cli
+mgx-core:127.0.0.1:nologin> login admin --cluster main --ns main
+Password:
+mgx-core:127.0.0.1:main:main:admin> cluster nodes list
+```
+
+Every command set (nodes, pools, volumes, snapshots) is documented in the
+[CLI reference](https://backedblock.io/docs/cli).
+
+**Grafana** (when `enable_grafana` is on) runs on the cluster's VIP node, and the
+VIP can move. Run `cluster list` in mgx-cli. `vip_host.ip` is the node that
+currently holds it. Match that IP against `bbctl status`, then forward the port:
+
+```bash
+bbctl connect --node i-0123456789abcdef0 --forward 3000   # http://localhost:3000
+```
+
+### Requirements
+
+- AWS credentials with EC2, IAM, VPC, S3, and SSM permissions
+- An existing VPC with a public subnet for the NAT gateway. `bbctl init` finds
+  both.
+- Access to the prebaked node AMI in your region. `bbctl init` picks the latest
+  one; the published IDs are in [Node AMIs](https://backedblock.io/docs/node-amis).
+
+To call the modules from your own Terraform instead, see
+[`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx). `bbctl render`
+writes the exact stacks bbctl runs, if you want a working starting point.
 
 ---
 
@@ -230,7 +282,7 @@ prebaked node AMI for `nodes_ami` — the published ID for your region is in
 
 | Repository | What it is |
 |---|---|
-| [`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx) | The Terraform modules these blueprints call (`network`, `pool`, `mgmt`, `provision`). Pulled straight from GitHub — nothing to vendor. |
+| [`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx) | The Terraform modules bbctl runs (`network`, `pool`, `mgmt`, `provision`), fetched over HTTPS at `modules.ref`. Usable directly from your own Terraform. |
 | [`mgx-csi-driver`](https://github.com/migrx-io/mgx-csi-driver) | The CSI driver and its Helm chart: the Kubernetes half of the install. |
 
 Questions: [support@backedblock.io](mailto:support@backedblock.io).
