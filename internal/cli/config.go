@@ -47,19 +47,8 @@ func (a *app) configCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create NAME",
 		Short: "Write NAME.bbctl.yaml",
-		Long: `create asks for the AWS region, the VPC and the workload (how many volumes,
-how big, how fast), then writes NAME.bbctl.yaml. The defaults come from your
-AWS account and from the cost calculator at https://backedblock.io: the
-workload goes to its API, and its answer sets the pools' instance type, node
-count, cache disks and cache sizes. A workload too big for one pool gets
-several identical pools, and the option of a management plane in front of
-them.
-
-Every question has a flag, and a flag that is given is not asked. Without a
-terminal, or with --json, nothing is asked: flags and defaults decide.
-
-NAME names the deployment: it prefixes the AWS resources and keys the state,
-and other commands select it with --storage NAME.`,
+		Long: `Create the configuration for a storage cluster, NAME.bbctl.yaml.
+Pools are sized by the calculator: https://backedblock.io/docs/sizing`,
 		Example: `  bbctl config create prod
   bbctl config create prod --region us-east-1 --vpc vpc-0abc --volumes 40 --volume-size 8000 --json`,
 		Args: cobra.ExactArgs(1),
@@ -70,15 +59,15 @@ and other commands select it with --storage NAME.`,
 	f := cmd.Flags()
 	f.StringVar(&o.region, "region", "", "AWS region")
 	f.StringVar(&o.vpc, "vpc", "", "VPC ID")
-	f.StringSliceVar(&o.azs, "azs", nil, "AZs for the subnets")
+	f.StringSliceVar(&o.azs, "azs", nil, "AZs for the subnets; pools are spread across them")
 	f.StringVar(&o.natSubnet, "nat-subnet", "", "public subnet for the NAT gateway")
-	f.StringVar(&o.ami, "ami", "", "node AMI")
+	f.StringVar(&o.ami, "ami", "", "node AMI, see https://backedblock.io/docs/node-amis")
 	f.IntVar(&o.volumes, "volumes", 0, "number of volumes")
 	f.IntVar(&o.volumeGB, "volume-size", 0, "size of one volume, GB")
-	f.IntVar(&o.mbps, "throughput", 0, "read and write throughput per volume, MB/s")
-	f.IntVar(&o.iops, "iops", 0, "IOPS per volume")
-	f.StringVar(&o.instanceType, "instance-type", "", "override the calculator's instance type for every pool")
-	f.IntVar(&o.nodes, "nodes", 0, "override the calculator's node count for every pool")
+	f.IntVar(&o.mbps, "volume-throughput", 0, "read and write throughput per volume, MB/s")
+	f.IntVar(&o.iops, "volume-iops", 0, "IOPS per volume")
+	f.StringVar(&o.instanceType, "instance-type", "", "storage instance type")
+	f.IntVar(&o.nodes, "nodes", 0, "pool's node count")
 	f.BoolVar(&o.mgmt, "mgmt", false, "add a management plane")
 	f.BoolVar(&o.force, "force", false, "overwrite an existing config")
 	return cmd
@@ -281,8 +270,8 @@ func sizeWorkload(ctx context.Context, flags *pflag.FlagSet) (*estimate.Result, 
 	in := estimate.Inputs{
 		"volumeCount": ask(flags, "volumes", "Number of volumes", def("volumeCount")),
 		"volumeGB":    ask(flags, "volume-size", "Size of one volume, GB", def("volumeGB")),
-		"rwMBps":      ask(flags, "throughput", "Throughput per volume, MB/s", def("writeMBps")),
-		"iops":        ask(flags, "iops", "IOPS per volume", def("iops")),
+		"rwMBps":      ask(flags, "volume-throughput", "Throughput per volume, MB/s", def("writeMBps")),
+		"iops":        ask(flags, "volume-iops", "IOPS per volume", def("iops")),
 	}
 	est, err := estimate.Run(ctx, in)
 	var ie *estimate.InputError

@@ -79,7 +79,7 @@ func (a *app) withConfig(cmd *cobra.Command, aws bool) *cobra.Command {
 }
 
 func (a *app) withProfile(cmd *cobra.Command) *cobra.Command {
-	cmd.Flags().StringVar(&a.profile, "profile", "", "AWS shared config profile")
+	cmd.Flags().StringVar(&a.profile, "profile", "", "AWS profile")
 	return cmd
 }
 

@@ -34,12 +34,13 @@ bbctl status -s <name> --wait --json         # until every node reports provisio
 ```
 
 `config create` asks nothing under `--json`. Give the workload as flags:
-`--volumes`, `--volume-size` (GB), `--throughput` (MB/s per volume) and
-`--iops`. Missing ones take the calculator's defaults. The calculator sizes the pools. Its
-answer is in the result's `estimate`, with the monthly cost against EBS gp3,
-and `storage_class` holds the StorageClass parameters for the CSI driver. When
-the workload needs several pools, a management plane is added in front of them
-unless you pass `--mgmt=false`. Ask the human which they want.
+`--volumes`, `--volume-size` (GB), `--volume-throughput` (MB/s) and
+`--volume-iops`. Missing ones take the calculator's defaults. The calculator
+sizes the pools. Its answer is in the result's `estimate`, with the monthly
+cost against EBS gp3, and `storage_class` holds the StorageClass parameters
+for the CSI driver. When the workload needs several pools, a management plane
+is added in front of them unless you pass `--mgmt=false`. Ask the human which
+they want.
 
 `-s <name>` selects the storage. It can be left out when the directory has only
 one. `bbctl config list --json` lists them. `bbctl config delete <name> --yes
