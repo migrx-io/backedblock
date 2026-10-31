@@ -46,7 +46,7 @@ func (a *app) configCreateCmd() *cobra.Command {
 	o := configOpts{}
 	cmd := &cobra.Command{
 		Use:   "create NAME",
-		Short: "Write NAME.bbctl.yaml, sized from the cost calculator",
+		Short: "Write NAME.bbctl.yaml",
 		Long: `create asks for the AWS region, the VPC and the workload (how many volumes,
 how big, how fast), then writes NAME.bbctl.yaml. The defaults come from your
 AWS account and from the cost calculator at https://backedblock.io: the

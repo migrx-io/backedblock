@@ -93,6 +93,7 @@ func Result(v any, text func(w io.Writer)) error {
 func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false) // keep <name> and -> readable
 	return enc.Encode(v)
 }
 

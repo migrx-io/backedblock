@@ -49,7 +49,7 @@ storage config, NAME.bbctl.yaml.
 	pf.BoolVarP(&ui.Verbose, "verbose", "v", false, "show progress and Terraform output on stderr")
 
 	root.AddCommand(
-		a.withConfig(a.initCmd(), false), a.configCmd(),
+		a.initCmd(), a.configCmd(),
 		a.withConfig(a.doctorCmd(), true), a.withConfig(a.secretsCmd(), true),
 		a.withConfig(a.planCmd(), true), a.withConfig(a.applyCmd(), true), a.withConfig(a.destroyCmd(), true),
 		a.withConfig(a.statusCmd(), true), a.withConfig(a.execCmd(), true), a.withConfig(a.connectCmd(), true),

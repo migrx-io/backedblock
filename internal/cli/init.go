@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
@@ -19,12 +20,6 @@ func (a *app) initCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Download Terraform and the deployment modules",
-		Long: `init downloads the pinned Terraform and the terraform-aws-mgx modules into
-bbctl's cache, so later commands have nothing to fetch. It does not call AWS
-or write a config: create one with ` + "`bbctl config create <name>`" + `.
-
-With a single config in the directory (or --storage / --config), init uses
-its terraform and modules settings. Flags override them.`,
 		Example: `  bbctl init
   bbctl init --modules-ref v0.4.0`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -39,7 +34,6 @@ its terraform and modules settings. Flags override them.`,
 }
 
 type initResult struct {
-	Config           string   `json:"config,omitempty"`
 	Terraform        string   `json:"terraform"`
 	TerraformVersion string   `json:"terraform_version"`
 	ModulesRef       string   `json:"modules_ref,omitempty"`
@@ -51,26 +45,10 @@ type initResult struct {
 func (a *app) runInit(cmd *cobra.Command, o initOpts) error {
 	ctx := cmd.Context()
 	res := initResult{}
-	var tfPath string
-
-	// A config's own settings win over the defaults, flags over both. No
-	// config, or several, is fine: init then fetches the defaults.
-	if a.resolveConfig() == nil {
-		if c, err := config.Load(a.configPath); err == nil {
-			res.Config = a.configPath
-			tfPath = c.Terraform.Path
-			if c.Terraform.Version != "" && !cmd.Flags().Changed("terraform-version") {
-				o.terraformVersion = c.Terraform.Version
-			}
-			if !cmd.Flags().Changed("modules-ref") && !cmd.Flags().Changed("modules-path") {
-				o.modulesRef, o.modulesPath = c.Modules.Ref, c.Modules.Path
-			}
-		}
-	}
 
 	// Fetch both even if one fails, so the table shows each one's state.
 	var tfErr, modErr error
-	if res.Terraform, tfErr = tf.EnsureTerraform(ctx, tfPath, o.terraformVersion); tfErr != nil {
+	if res.Terraform, tfErr = tf.EnsureTerraform(ctx, "", o.terraformVersion); tfErr != nil {
 		tfErr = ui.Wrap(ui.ExitError, "check network access to releases.hashicorp.com, or set BBCTL_TERRAFORM to an existing binary", tfErr)
 	} else if res.TerraformVersion, tfErr = tf.TerraformVersion(ctx, res.Terraform); tfErr != nil {
 		tfErr = ui.Wrap(ui.ExitError, "", tfErr)
@@ -95,9 +73,6 @@ func (a *app) runInit(cmd *cobra.Command, o initOpts) error {
 	}
 
 	res.Next = []string{"bbctl config create <name>"}
-	if res.Config != "" {
-		res.Next = []string{"bbctl plan"}
-	}
 	mark := func(err error) string {
 		if err != nil {
 			return "✗"
@@ -105,9 +80,8 @@ func (a *app) runInit(cmd *cobra.Command, o initOpts) error {
 		return "✓"
 	}
 	if err := ui.Result(res, func(w io.Writer) {
-		ui.Table(w, []string{"COMPONENT", "STATUS"},
-			[]string{"terraform", mark(tfErr)},
-			[]string{"terraform-aws-mgx", mark(modErr)})
+		fmt.Fprintf(w, "%s terraform\n", mark(tfErr))
+		fmt.Fprintf(w, "%s terraform-aws-mgx\n", mark(modErr))
 	}); err != nil {
 		return err
 	}
