@@ -76,7 +76,6 @@ func (a *app) runInit(cmd *cobra.Command, o initOpts) error {
 	if res.TerraformVersion, err = tf.TerraformVersion(ctx, res.Terraform); err != nil {
 		return ui.Wrap(ui.ExitError, "", err)
 	}
-	ui.Logf("terraform %s at %s", res.TerraformVersion, res.Terraform)
 
 	if o.modulesPath == "" {
 		res.ModulesRef = o.modulesRef
@@ -84,22 +83,28 @@ func (a *app) runInit(cmd *cobra.Command, o initOpts) error {
 	if res.ModulesDir, res.ModulesSHA, err = tf.EnsureModules(ctx, o.modulesRef, o.modulesPath); err != nil {
 		return ui.Wrap(ui.ExitError, "check network access to github.com, or pass --modules-path with a local checkout", err)
 	}
-	ui.Logf("modules %s at %s", res.ModulesSHA, res.ModulesDir)
 
 	res.Next = []string{"bbctl config create <name>"}
 	if res.Config != "" {
 		res.Next = []string{"bbctl doctor", "bbctl plan"}
 	}
 	return ui.Result(res, func(w io.Writer) {
-		fmt.Fprintf(w, "terraform  %s  %s\n", res.TerraformVersion, res.Terraform)
-		mod := res.ModulesSHA
-		if res.ModulesRef != "" {
-			mod = res.ModulesRef + " (" + res.ModulesSHA + ")"
+		mod := shortSHA(res.ModulesSHA)
+		switch {
+		case o.modulesPath != "":
+			mod = o.modulesPath
+		case res.ModulesRef != "":
+			mod = res.ModulesRef + " (" + mod + ")"
 		}
-		fmt.Fprintf(w, "modules    %s  %s\n", mod, res.ModulesDir)
-		fmt.Fprintf(w, "\nnext:\n")
-		for _, n := range res.Next {
-			fmt.Fprintf(w, "  %s\n", n)
-		}
+		fmt.Fprintf(w, "%-18s %s\n", "COMPONENT", "VERSION")
+		fmt.Fprintf(w, "%-18s %s\n", "terraform", res.TerraformVersion)
+		fmt.Fprintf(w, "%-18s %s\n", "terraform-aws-mgx", mod)
 	})
+}
+
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
