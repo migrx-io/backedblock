@@ -246,8 +246,9 @@ func (a *app) execCmd() *cobra.Command {
 	var t target
 	var timeout time.Duration
 	cmd := &cobra.Command{
-		Use:   "exec [flags] -- COMMAND...",
-		Short: "Run a shell command on nodes through SSM (non-interactive)",
+		Use:    "exec [flags] -- COMMAND...",
+		Short:  "Run a shell command on nodes through SSM (non-interactive)",
+		Hidden: true, // runs, but kept out of the command list
 		Long: `exec runs a command as root on one node (default) or every node of a stack
 (--all) through SSM Run Command and returns its exit code and output. It needs
 no SSH or bastion and no terminal, which makes it the way for scripts

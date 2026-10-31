@@ -23,17 +23,9 @@ import (
 func (a *app) configCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Create and list storage configs",
+		Short: "Create, list and delete storage configs",
 	}
-	cmd.AddCommand(a.configCreateCmd(), a.configListCmd())
-	// create takes the storage as NAME and list shows them all, so the
-	// global --storage means nothing here: keep it out of their help.
-	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
-		if f := c.Root().PersistentFlags().Lookup("storage"); f != nil {
-			f.Hidden = true
-		}
-		c.Root().HelpFunc()(c, args)
-	})
+	cmd.AddCommand(a.withProfile(a.configCreateCmd()), a.configListCmd(), a.configDeleteCmd())
 	return cmd
 }
 
@@ -109,13 +101,7 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 		return ui.Errf(ui.ExitUsage, "use lowercase letters, digits and dashes, starting with a letter (max 31), not "+strings.Join(reservedNames, " or "),
 			"invalid storage name %q", name)
 	}
-	if a.storage != "" {
-		return ui.Errf(ui.ExitUsage, "drop --storage; NAME is the storage", "--storage is not used by config create")
-	}
-	path := a.configPath
-	if path == "" {
-		path = config.StorageFile(".", name)
-	}
+	path := config.StorageFile(".", name)
 	if _, err := os.Stat(path); err == nil && !o.force {
 		return ui.Errf(ui.ExitUsage, "pass --force to overwrite it", "%s already exists", path)
 	}
@@ -274,9 +260,6 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 	}
 
 	sel := " --storage " + name
-	if a.configPath != "" {
-		sel = " --config " + path
-	}
 	res := configResult{
 		Config: path, Storage: name, Account: id.Account, Estimate: est, Settings: cfg,
 		StorageClass: est.Config.StorageClass,
@@ -318,9 +301,6 @@ func sizeWorkload(ctx context.Context, flags *pflag.FlagSet) (*estimate.Result, 
 		}
 		return nil, ui.Errf(ui.ExitUsage, "lower the per-volume throughput or IOPS", "the calculator cannot size this workload: %s", why)
 	}
-	for _, n := range est.Notices {
-		ui.Logf("note: %s", n)
-	}
 	return est, nil
 }
 
@@ -353,6 +333,40 @@ func printConfigResult(w io.Writer, res configResult, vpc awsx.VPC, pools int) {
 	for _, n := range res.Next {
 		fmt.Fprintf(w, "  %s\n", n)
 	}
+}
+
+func (a *app) configDeleteCmd() *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete NAME",
+		Short: "Delete NAME.bbctl.yaml",
+		Long: `delete removes NAME.bbctl.yaml. It does not touch AWS: if the storage is
+deployed, run ` + "`bbctl destroy -s NAME`" + ` first, because destroy needs the config.
+The work dir, .bbctl/NAME, is kept: it holds the SSH key registered with EC2.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if !config.ValidName(name) {
+				return ui.Errf(ui.ExitUsage, "see `bbctl config list`", "invalid storage name %q", name)
+			}
+			path := config.StorageFile(".", name)
+			if _, err := os.Stat(path); err != nil {
+				return ui.Errf(ui.ExitUsage, "see `bbctl config list`", "%s not found", path)
+			}
+			if !yes {
+				if err := ui.Confirm("Delete "+path+"? AWS resources are not destroyed.", "--yes"); err != nil {
+					return err
+				}
+			}
+			if err := os.Remove(path); err != nil {
+				return ui.Wrap(ui.ExitError, "", err)
+			}
+			res := map[string]string{"deleted": path}
+			return ui.Result(res, func(w io.Writer) { fmt.Fprintf(w, "deleted %s\n", path) })
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete without asking")
+	return cmd
 }
 
 func (a *app) configListCmd() *cobra.Command {

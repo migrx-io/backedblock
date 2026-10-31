@@ -15,7 +15,7 @@ import (
 func (a *app) poolCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pool",
-		Short: "Add or remove storage pools in bbctl.yaml",
+		Short: "Add, list or remove the storage pools in a config",
 	}
 	cmd.AddCommand(a.poolAddCmd(), a.poolRemoveCmd(), a.poolListCmd())
 	return cmd

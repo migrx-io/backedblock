@@ -42,7 +42,8 @@ model, so bbctl keeps no copy of the formula.
 Each of these fixed a real bug or review finding. Keep them.
 
 - **Stdout carries exactly one result:** JSON with `--json`, else text.
-  Progress (`ui.Logf`) and Terraform's output go to stderr. Errors are
+  Progress (`ui.Logf`) and Terraform's output go to stderr, and only with
+  `-v/--verbose`. Approval prompts print their plan summary regardless. Errors are
   `ui.Error{code, error, hint, details}`.
 - **Exit codes are stable:** 1 other, 2 usage or config, 3 AWS, 4 Terraform,
   5 declined. `cli.SilentExit` sets a code after a result was already

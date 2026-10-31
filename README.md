@@ -232,7 +232,9 @@ a terminal nothing is asked.
 
 Each storage is one file, `NAME.bbctl.yaml`, and one deployment. Several can
 share a directory: commands pick one with `--storage NAME` (`-s`), or use the
-only one there. `bbctl config list` shows them.
+only one there. `bbctl config list` shows them. `bbctl config delete NAME`
+removes the file and leaves AWS alone, so `bbctl destroy -s NAME` first if
+it's deployed.
 
 A workload too big for one pool gets several identical pools. Add more with
 `bbctl pool add pool2`, then `bbctl apply`:
@@ -254,7 +256,7 @@ Day-2 commands:
 | `bbctl render` | write the generated Terraform to `.bbctl/NAME/stacks/` for review |
 
 **Scripts and agents:** every command takes `--json`. The result goes to
-stdout, progress and Terraform logs go to stderr, and failures come back as
+stdout, progress and Terraform logs go to stderr with `-v`, and failures come back as
 `{"error", "hint", "code"}`. Exit codes: 2 config, 3 AWS, 4 Terraform, 5 declined.
 Prompts are never shown without a TTY. `apply` and `destroy` need
 `--auto-approve` instead. Every command is safe to re-run. See

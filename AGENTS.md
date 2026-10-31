@@ -8,8 +8,8 @@ the human.
 
 ## Contract
 
-- Pass `--json` to every command. Stdout is exactly one JSON document. Progress
-  and Terraform logs go to stderr.
+- Pass `--json` to every command. Stdout is exactly one JSON document. With
+  `-v`, progress and Terraform logs go to stderr; without it there are none.
 - Failure: `{"code": N, "error": "...", "hint": "...", "details": [...]}`. Do
   what `hint` says.
 - Exit codes: `0` ok, `1` other, `2` bad flags or invalid config, `3`
@@ -42,7 +42,9 @@ the workload needs several pools, a management plane is added in front of them
 unless you pass `--mgmt=false`. Ask the human which they want.
 
 `-s <name>` selects the storage. It can be left out when the directory has only
-one. `bbctl config list --json` lists them.
+one. `bbctl config list --json` lists them. `bbctl config delete <name> --yes
+--json` removes the file only; it destroys nothing in AWS, so run `destroy`
+first (with the human's approval) if the storage is deployed.
 
 Before `apply`, get the human's approval. It creates billable EC2, EBS, NAT
 and S3 resources. Show them the `plan` output, the instance count and type

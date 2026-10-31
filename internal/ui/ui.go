@@ -18,12 +18,12 @@ import (
 // JSON is set by the --json flag.
 var JSON bool
 
-// Quiet suppresses progress lines on stderr.
-var Quiet bool
+// Verbose turns on progress lines (and Terraform's output) on stderr.
+var Verbose bool
 
-// Logf prints a progress line to stderr.
+// Logf prints a progress line to stderr, with --verbose.
 func Logf(format string, a ...any) {
-	if Quiet {
+	if !Verbose {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "› "+format+"\n", a...)

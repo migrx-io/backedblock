@@ -25,8 +25,9 @@ type check struct {
 
 func (a *app) doctorCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "doctor",
-		Short: "Check that everything apply needs is in place",
+		Use:    "doctor",
+		Short:  "Check that everything apply needs is in place",
+		Hidden: true, // runs, but kept out of the command list
 		Long: `doctor checks credentials, the config, the toolchain and the AWS resources
 bbctl.yaml refers to, and says how to fix each problem. It changes nothing
 (except downloading terraform into the cache). Exit code 1 if any check fails.`,

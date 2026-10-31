@@ -35,30 +35,52 @@ storage config, NAME.bbctl.yaml.
 
   bbctl init                 download Terraform and the modules
   bbctl config create NAME   generate NAME.bbctl.yaml
-  bbctl secrets generate     create the node secrets in SSM
   bbctl apply                create everything
   bbctl status               nodes and their health`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:       Version,
 	}
+	root.CompletionOptions.HiddenDefaultCmd = true // `bbctl completion` works, unlisted
 	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
 		return ui.Wrap(ui.ExitUsage, "see `"+c.CommandPath()+" --help`", err)
 	})
 	pf := root.PersistentFlags()
-	pf.StringVarP(&a.storage, "storage", "s", "", "named storage: uses <name>.bbctl.yaml (default: the only one here)")
-	pf.StringVarP(&a.configPath, "config", "c", "", "path to a config file, instead of --storage")
-	pf.StringVar(&a.profile, "profile", "", "AWS shared config profile")
 	pf.BoolVar(&ui.JSON, "json", false, "print results as JSON on stdout")
-	pf.BoolVarP(&ui.Quiet, "quiet", "q", false, "no progress output on stderr")
+	pf.BoolVarP(&ui.Verbose, "verbose", "v", false, "show progress and Terraform output on stderr")
 
 	root.AddCommand(
-		a.initCmd(), a.configCmd(), a.doctorCmd(), a.secretsCmd(),
-		a.planCmd(), a.applyCmd(), a.destroyCmd(),
-		a.statusCmd(), a.execCmd(), a.connectCmd(),
-		a.poolCmd(), a.renderCmd(), versionCmd(),
+		a.withConfig(a.initCmd(), false), a.configCmd(),
+		a.withConfig(a.doctorCmd(), true), a.withConfig(a.secretsCmd(), true),
+		a.withConfig(a.planCmd(), true), a.withConfig(a.applyCmd(), true), a.withConfig(a.destroyCmd(), true),
+		a.withConfig(a.statusCmd(), true), a.withConfig(a.execCmd(), true), a.withConfig(a.connectCmd(), true),
+		a.withConfig(a.poolCmd(), true), a.withConfig(a.renderCmd(), true), versionCmd(),
 	)
 	return root
+}
+
+// withConfig gives a command (and its subcommands) the flags that select a
+// config, plus --profile when it calls AWS. Commands that need neither, such
+// as version or config list, don't list them.
+func (a *app) withConfig(cmd *cobra.Command, aws bool) *cobra.Command {
+	// On each leaf, not the group, so help lists them under Flags.
+	for _, sub := range cmd.Commands() {
+		a.withConfig(sub, aws)
+	}
+	if cmd.HasSubCommands() {
+		return cmd
+	}
+	f := cmd.Flags()
+	f.StringVarP(&a.storage, "storage", "s", "", "named storage: uses <name>.bbctl.yaml (default: the only one here)")
+	f.StringVarP(&a.configPath, "config", "c", "", "path to a config file, instead of --storage")
+	if aws {
+		a.withProfile(cmd)
+	}
+	return cmd
+}
+
+func (a *app) withProfile(cmd *cobra.Command) *cobra.Command {
+	cmd.Flags().StringVar(&a.profile, "profile", "", "AWS shared config profile")
+	return cmd
 }
 
 // resolveConfig settles which config file a command works on: --config as

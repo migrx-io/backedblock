@@ -28,7 +28,7 @@ func NewRunner(execPath, dir, profile string) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !ui.Quiet {
+	if ui.Verbose {
 		t.SetStdout(os.Stderr)
 	}
 	t.SetStderr(os.Stderr)

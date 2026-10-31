@@ -172,8 +172,9 @@ func nonNilResults(r []deploy.StackResult) []deploy.StackResult {
 
 func (a *app) renderCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "render",
-		Short: "Write the Terraform stacks to .bbctl/stacks without running them",
+		Use:    "render",
+		Short:  "Write the Terraform stacks to .bbctl/<name>/stacks without running them",
+		Hidden: true, // runs, but kept out of the command list
 		Long: `render resolves the modules and writes each stack's main.tf.json, for review
 or to run Terraform by hand. It needs no AWS access beyond config validation.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
