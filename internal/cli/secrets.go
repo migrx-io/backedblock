@@ -16,9 +16,8 @@ func (a *app) secretsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secrets",
 		Short: "Manage the node secrets stored in SSM Parameter Store",
-		Long: `Node secrets (Cassandra, API keys, admin and Grafana passwords) live in one
-SSM SecureString at secrets_ssm_path. Nodes fetch it while provisioning; it
-never enters Terraform state or a local file.`,
+		Long: `Node secrets live in SSM SecureString at secrets_ssm_path. Nodes fetch it
+while provisioning.`,
 	}
 	cmd.AddCommand(a.secretsGenerateCmd(), a.secretsSetCmd(), a.secretsGetCmd(), a.secretsListCmd())
 	return cmd
