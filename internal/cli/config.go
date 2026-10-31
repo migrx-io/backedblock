@@ -26,18 +26,24 @@ func (a *app) configCmd() *cobra.Command {
 		Short: "Create and list storage configs",
 	}
 	cmd.AddCommand(a.configCreateCmd(), a.configListCmd())
+	// create takes the storage as NAME and list shows them all, so the
+	// global --storage means nothing here: keep it out of their help.
+	cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+		if f := c.Root().PersistentFlags().Lookup("storage"); f != nil {
+			f.Hidden = true
+		}
+		c.Root().HelpFunc()(c, args)
+	})
 	return cmd
 }
 
 type configOpts struct {
-	region, vpc, natSubnet, ami, arch string
-	instanceType, modulesRef          string
-	modulesPath                       string
-	azs                               []string
-	volumes, volumeGB, mbps, iops     int
-	nodes                             int
-	extra                             map[string]string
-	mgmt, noEstimate, force           bool
+	region, vpc, natSubnet, ami   string
+	instanceType                  string
+	azs                           []string
+	volumes, volumeGB, mbps, iops int
+	nodes                         int
+	mgmt, force                   bool
 }
 
 // Names a storage cannot take: they are directories of a plain bbctl.yaml's
@@ -63,31 +69,25 @@ terminal, or with --json, nothing is asked: flags and defaults decide.
 NAME names the deployment: it prefixes the AWS resources and keys the state,
 and other commands select it with --storage NAME.`,
 		Example: `  bbctl config create prod
-  bbctl config create prod --region us-east-1 --vpc vpc-0abc --volumes 40 --volume-size 8000 --json
-  bbctl config create dev --estimate snapshots=false --estimate cacheRatioPct=20`,
+  bbctl config create prod --region us-east-1 --vpc vpc-0abc --volumes 40 --volume-size 8000 --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.runConfigCreate(cmd, args[0], o)
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&o.region, "region", "", "AWS region (default: from your AWS config)")
-	f.StringVar(&o.vpc, "vpc", "", "VPC ID (default: the only VPC in the region)")
-	f.StringSliceVar(&o.azs, "azs", nil, "AZs for the subnets (default: up to 3 offering the instance types)")
-	f.StringVar(&o.natSubnet, "nat-subnet", "", "public subnet for the NAT gateway (default: discovered)")
-	f.StringVar(&o.ami, "ami", "", "node AMI (default: the one published for the region and architecture)")
-	f.IntVar(&o.volumes, "volumes", 0, "number of volumes (default: the calculator's)")
-	f.IntVar(&o.volumeGB, "volume-size", 0, "size of one volume, GB (default: the calculator's)")
-	f.IntVar(&o.mbps, "throughput", 0, "read and write throughput per volume, MB/s (default: the calculator's)")
-	f.IntVar(&o.iops, "iops", 0, "IOPS per volume (default: the calculator's)")
-	f.StringVar(&o.arch, "arch", "", "arm64 or x86_64 (default: the calculator's)")
-	f.StringToStringVar(&o.extra, "estimate", nil, "any other calculator input, e.g. snapshots=false or instanceTypes=c6gn.2xlarge (repeatable)")
+	f.StringVar(&o.region, "region", "", "AWS region")
+	f.StringVar(&o.vpc, "vpc", "", "VPC ID")
+	f.StringSliceVar(&o.azs, "azs", nil, "AZs for the subnets")
+	f.StringVar(&o.natSubnet, "nat-subnet", "", "public subnet for the NAT gateway")
+	f.StringVar(&o.ami, "ami", "", "node AMI")
+	f.IntVar(&o.volumes, "volumes", 0, "number of volumes")
+	f.IntVar(&o.volumeGB, "volume-size", 0, "size of one volume, GB")
+	f.IntVar(&o.mbps, "throughput", 0, "read and write throughput per volume, MB/s")
+	f.IntVar(&o.iops, "iops", 0, "IOPS per volume")
 	f.StringVar(&o.instanceType, "instance-type", "", "override the calculator's instance type for every pool")
 	f.IntVar(&o.nodes, "nodes", 0, "override the calculator's node count for every pool")
-	f.BoolVar(&o.mgmt, "mgmt", false, "add a management plane (default: asked when there are several pools)")
-	f.BoolVar(&o.noEstimate, "no-estimate", false, "skip the calculator: one pool of 3 x "+config.DefaultInstanceType)
-	f.StringVar(&o.modulesRef, "modules-ref", config.DefaultModulesRef, "terraform-aws-mgx git ref")
-	f.StringVar(&o.modulesPath, "modules-path", "", "use a local terraform-aws-mgx checkout")
+	f.BoolVar(&o.mgmt, "mgmt", false, "add a management plane")
 	f.BoolVar(&o.force, "force", false, "overwrite an existing config")
 	return cmd
 }
@@ -109,8 +109,8 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 		return ui.Errf(ui.ExitUsage, "use lowercase letters, digits and dashes, starting with a letter (max 31), not "+strings.Join(reservedNames, " or "),
 			"invalid storage name %q", name)
 	}
-	if a.storage != "" && a.storage != name {
-		return ui.Errf(ui.ExitUsage, "drop --storage; NAME is the storage", "--storage %s does not match NAME %s", a.storage, name)
+	if a.storage != "" {
+		return ui.Errf(ui.ExitUsage, "drop --storage; NAME is the storage", "--storage is not used by config create")
 	}
 	path := a.configPath
 	if path == "" {
@@ -148,19 +148,17 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 	ui.Logf("vpc %s %v", vpc.ID, vpc.CIDRs)
 
 	// Workload, priced and sized by the calculator.
-	var est *estimate.Result
+	est, err := sizeWorkload(ctx, flags)
+	if err != nil {
+		return err
+	}
 	sized := config.DefaultPool(name, id.Account, "pool1", "")
+	if err := yaml.Unmarshal([]byte(est.Config.Pool), &sized); err != nil {
+		return ui.Wrap(ui.ExitError, "", fmt.Errorf("reading the calculator's pool config: %w", err))
+	}
 	pools := 1
-	if !o.noEstimate {
-		if est, err = sizeWorkload(ctx, flags, o); err != nil {
-			return err
-		}
-		if err := yaml.Unmarshal([]byte(est.Config.Pool), &sized); err != nil {
-			return ui.Wrap(ui.ExitError, "pass --no-estimate to use the built-in pool", fmt.Errorf("reading the calculator's pool config: %w", err))
-		}
-		if est.Split != nil {
-			pools = est.Split.Pools
-		}
+	if est.Split != nil {
+		pools = est.Split.Pools
 	}
 	if o.instanceType != "" {
 		sized.InstanceType = o.instanceType
@@ -189,7 +187,7 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 			return ui.Wrap(ui.ExitAWS, "", err)
 		}
 		if len(offered) == 0 {
-			return ui.Errf(ui.ExitAWS, "pick other types with --instance-type, or --estimate instanceTypes=<types offered here>",
+			return ui.Errf(ui.ExitAWS, "pick another type with --instance-type",
 				"%v not offered in any AZ of %s", types, c.Region())
 		}
 		azs = strings.Split(ask(flags, "azs", "Availability zones", strings.Join(offered[:min(3, len(offered))], ",")), ",")
@@ -243,7 +241,7 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 		Region:         c.Region(),
 		Cluster:        "main",
 		State:          config.State{Bucket: config.StateBucketName(name, id.Account, c.Region())},
-		Modules:        config.Modules{Ref: o.modulesRef, Path: o.modulesPath},
+		Modules:        config.Modules{Ref: config.DefaultModulesRef},
 		NodesAMI:       ami,
 		SecretsSSMPath: "/mgx/" + name + "/secrets",
 		Network: config.Network{
@@ -281,18 +279,16 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 	}
 	res := configResult{
 		Config: path, Storage: name, Account: id.Account, Estimate: est, Settings: cfg,
-		Next: []string{"review " + path, "bbctl secrets generate" + sel, "bbctl doctor" + sel, "bbctl plan" + sel, "bbctl apply" + sel},
-	}
-	if est != nil {
-		res.StorageClass = est.Config.StorageClass
+		StorageClass: est.Config.StorageClass,
+		Next:         []string{"review " + path, "bbctl secrets generate" + sel, "bbctl doctor" + sel, "bbctl plan" + sel, "bbctl apply" + sel},
 	}
 	return ui.Result(res, func(w io.Writer) { printConfigResult(w, res, vpc, pools) })
 }
 
 // sizeWorkload asks for the workload, defaulting to the calculator's own
 // inputs, and prices it.
-func sizeWorkload(ctx context.Context, flags *pflag.FlagSet, o configOpts) (*estimate.Result, error) {
-	hint := "check network access to backedblock.io, or pass --no-estimate to use the built-in pool"
+func sizeWorkload(ctx context.Context, flags *pflag.FlagSet) (*estimate.Result, error) {
+	hint := "check network access to backedblock.io"
 	defaults, err := estimate.Run(ctx, nil)
 	if err != nil {
 		return nil, ui.Wrap(ui.ExitError, hint, err)
@@ -304,15 +300,11 @@ func sizeWorkload(ctx context.Context, flags *pflag.FlagSet, o configOpts) (*est
 		"volumeGB":    ask(flags, "volume-size", "Size of one volume, GB", def("volumeGB")),
 		"rwMBps":      ask(flags, "throughput", "Throughput per volume, MB/s", def("writeMBps")),
 		"iops":        ask(flags, "iops", "IOPS per volume", def("iops")),
-		"arch":        ask(flags, "arch", "Architecture (arm64 or x86_64)", def("arch")),
-	}
-	for k, v := range o.extra {
-		in[k] = v
 	}
 	est, err := estimate.Run(ctx, in)
 	var ie *estimate.InputError
 	if errors.As(err, &ie) {
-		e := ui.Errf(ui.ExitUsage, "fix the workload flags; --estimate takes the calculator's input names", "the calculator rejected the workload")
+		e := ui.Errf(ui.ExitUsage, "fix the workload flags", "the calculator rejected the workload")
 		e.Details = ie.Details
 		return nil, e
 	}
@@ -324,7 +316,7 @@ func sizeWorkload(ctx context.Context, flags *pflag.FlagSet, o configOpts) (*est
 		if est.Sizing.Shortfall != nil {
 			why = *est.Sizing.Shortfall
 		}
-		return nil, ui.Errf(ui.ExitUsage, "lower the per-volume throughput or IOPS, or pass --no-estimate", "the calculator cannot size this workload: %s", why)
+		return nil, ui.Errf(ui.ExitUsage, "lower the per-volume throughput or IOPS", "the calculator cannot size this workload: %s", why)
 	}
 	for _, n := range est.Notices {
 		ui.Logf("note: %s", n)

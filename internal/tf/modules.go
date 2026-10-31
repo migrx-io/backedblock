@@ -41,7 +41,7 @@ func EnsureModules(ctx context.Context, ref, localPath string) (dir, sha string,
 	if err != nil {
 		return "", "", err
 	}
-	refFile := filepath.Join(cache, "modules", "refs", strings.ReplaceAll(ref, "/", "_"))
+	refFile := refPath(cache, ref)
 
 	sha, err = resolveRef(ctx, ref)
 	if err != nil {
@@ -52,6 +52,8 @@ func EnsureModules(ctx context.Context, ref, localPath string) (dir, sha string,
 		}
 		sha = strings.TrimSpace(string(b))
 		ui.Logf("could not resolve modules ref %q (%v); using cached %s", ref, err, sha[:12])
+	} else if err := os.MkdirAll(filepath.Dir(refFile), 0o755); err == nil {
+		_ = os.WriteFile(refFile, []byte(sha), 0o644)
 	}
 
 	dir = filepath.Join(cache, "modules", sha)
@@ -67,10 +69,25 @@ func EnsureModules(ctx context.Context, ref, localPath string) (dir, sha string,
 	if err := os.Rename(tmp, dir); err != nil {
 		return "", "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(refFile), 0o755); err == nil {
-		_ = os.WriteFile(refFile, []byte(sha), 0o644)
-	}
 	return dir, sha, nil
+}
+
+// CachedModulesSHA is the commit ref last resolved to, without the network:
+// "" if init has not fetched it yet.
+func CachedModulesSHA(ref string) string {
+	cache, err := CacheDir()
+	if err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(refPath(cache, ref))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func refPath(cache, ref string) string {
+	return filepath.Join(cache, "modules", "refs", strings.ReplaceAll(ref, "/", "_"))
 }
 
 func resolveRef(ctx context.Context, ref string) (string, error) {

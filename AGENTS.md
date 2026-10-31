@@ -35,8 +35,7 @@ bbctl status -s <name> --wait --json         # until every node reports provisio
 
 `config create` asks nothing under `--json`. Give the workload as flags:
 `--volumes`, `--volume-size` (GB), `--throughput` (MB/s per volume) and
-`--iops`. Any other calculator input goes in `--estimate key=value`. Missing
-ones take the calculator's defaults. The calculator sizes the pools. Its
+`--iops`. Missing ones take the calculator's defaults. The calculator sizes the pools. Its
 answer is in the result's `estimate`, with the monthly cost against EBS gp3,
 and `storage_class` holds the StorageClass parameters for the CSI driver. When
 the workload needs several pools, a management plane is added in front of them

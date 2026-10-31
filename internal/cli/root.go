@@ -4,7 +4,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -35,7 +34,7 @@ func NewRoot() *cobra.Command {
 storage config, NAME.bbctl.yaml.
 
   bbctl init                 download Terraform and the modules
-  bbctl config create NAME   ask for the region, VPC and workload; write NAME.bbctl.yaml
+  bbctl config create NAME   generate NAME.bbctl.yaml
   bbctl secrets generate     create the node secrets in SSM
   bbctl apply                create everything
   bbctl status               nodes and their health`,
@@ -133,9 +132,19 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print bbctl and pinned tool versions",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			v := map[string]string{"bbctl": Version, "terraform": tf.DefaultVersion, "modules_repo": tf.ModulesRepo}
+			ref := config.DefaultModulesRef
+			sha := tf.CachedModulesSHA(ref)
+			v := map[string]string{"bbctl": Version, "terraform": tf.DefaultVersion, "modules_repo": tf.ModulesRepo, "modules_ref": ref}
+			mod := ref
+			if sha != "" {
+				v["modules_sha"] = sha
+				mod += " (" + shortSHA(sha) + ")"
+			}
 			return ui.Result(v, func(w io.Writer) {
-				fmt.Fprintf(w, "bbctl %s (terraform %s, modules %s)\n", Version, tf.DefaultVersion, tf.ModulesRepo)
+				ui.Table(w, []string{"COMPONENT", "VERSION"},
+					[]string{"bbctl", Version},
+					[]string{"terraform", tf.DefaultVersion},
+					[]string{"terraform-aws-mgx", mod})
 			})
 		},
 	}
