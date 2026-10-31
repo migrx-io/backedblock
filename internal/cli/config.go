@@ -47,7 +47,8 @@ func (a *app) configCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create NAME",
 		Short: "Write NAME.bbctl.yaml",
-		Long: `Create the configuration for a storage cluster, NAME.bbctl.yaml.
+		Long: `Create the configuration for a storage cluster, NAME.bbctl.yaml. It creates
+nothing in AWS: run ` + "`bbctl apply NAME`" + ` to create the resources.
 Pools are sized by the calculator: https://backedblock.io/docs/sizing`,
 		Example: `  bbctl config create prod
   bbctl config create prod --region us-east-1 --vpc vpc-0abc --volumes 40 --volume-size 8000 --json`,
@@ -322,8 +323,7 @@ func (a *app) configDeleteCmd() *cobra.Command {
 		Use:   "delete NAME",
 		Short: "Delete NAME.bbctl.yaml",
 		Long: `delete removes NAME.bbctl.yaml. It does not touch AWS: if the storage is
-deployed, run ` + "`bbctl destroy NAME`" + ` first, because destroy needs the config.
-The work dir, .bbctl/NAME, is kept: it holds the SSH key registered with EC2.`,
+deployed, run ` + "`bbctl destroy NAME`" + ` first, because destroy needs the config.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -372,10 +372,6 @@ func (a *app) configListCmd() *cobra.Command {
 			for _, n := range names {
 				files[n] = config.StorageFile(".", n)
 			}
-			if _, err := os.Stat(config.DefaultFile); err == nil {
-				names = append(names, "")
-				files[""] = config.DefaultFile
-			}
 			list := []entry{}
 			for _, n := range names {
 				e := entry{Storage: n, Config: files[n]}
@@ -386,9 +382,6 @@ func (a *app) configListCmd() *cobra.Command {
 					e.Region, e.Pools, e.Mgmt = c.Region, len(c.Pools), c.Mgmt != nil
 					for _, p := range c.Pools {
 						e.Nodes += p.NodesCount
-					}
-					if e.Storage == "" {
-						e.Storage = c.Name
 					}
 				}
 				list = append(list, e)

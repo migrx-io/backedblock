@@ -75,11 +75,10 @@ is left alone (exit 0, status "exists") unless --force is given. Rotating with
 
 func (a *app) secretsSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:         "set KEY=VALUE...",
-		Annotations: map[string]string{storageArgKey: storageBeforePairs},
-		Short:       "Set individual keys, keeping the others",
-		Example:     "  bbctl secrets set MGX_GW_ADMIN_PASSWD=s3cret",
-		Args:        cobra.MinimumNArgs(1),
+		Use:     "set KEY=VALUE...",
+		Short:   "Set individual keys, keeping the others",
+		Example: "  bbctl secrets set prod MGX_GW_ADMIN_PASSWD=s3cret",
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := a.load()
 			if err != nil {
@@ -116,11 +115,10 @@ func (a *app) secretsSetCmd() *cobra.Command {
 
 func (a *app) secretsGetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:         "get KEY",
-		Annotations: map[string]string{storageArgKey: storageBeforeOne},
-		Short:       "Print one secret value (e.g. the admin password for mgx-cli)",
-		Example:     "  bbctl secrets get MGX_GW_ADMIN_PASSWD",
-		Args:        cobra.ExactArgs(1),
+		Use:     "get KEY",
+		Short:   "Print one secret value (e.g. the admin password for mgx-cli)",
+		Example: "  bbctl secrets get prod MGX_GW_ADMIN_PASSWD",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := a.load()
 			if err != nil {
@@ -135,11 +133,11 @@ func (a *app) secretsGetCmd() *cobra.Command {
 				return ui.Wrap(ui.ExitAWS, "", err)
 			}
 			if !found {
-				return ui.Errf(ui.ExitAWS, "run `bbctl secrets generate`", "node secret %s does not exist", cfg.SecretsSSMPath)
+				return ui.Errf(ui.ExitAWS, "run `bbctl secrets generate "+cfg.Name+"`", "node secret %s does not exist", cfg.SecretsSSMPath)
 			}
 			v, ok := s[args[0]]
 			if !ok {
-				return ui.Errf(ui.ExitUsage, "run `bbctl secrets list` to see the keys", "no key %q in %s", args[0], cfg.SecretsSSMPath)
+				return ui.Errf(ui.ExitUsage, "run `bbctl secrets list "+cfg.Name+"` to see the keys", "no key %q in %s", args[0], cfg.SecretsSSMPath)
 			}
 			return ui.Result(map[string]string{"key": args[0], "value": v}, func(w io.Writer) { fmt.Fprintln(w, v) })
 		},
@@ -171,7 +169,7 @@ func (a *app) secretsListCmd() *cobra.Command {
 			res := map[string]any{"path": cfg.SecretsSSMPath, "exists": found, "keys": keys, "missing": awsx.MissingSecrets(s)}
 			return ui.Result(res, func(w io.Writer) {
 				if !found {
-					fmt.Fprintf(w, "%s does not exist; run `bbctl secrets generate`\n", cfg.SecretsSSMPath)
+					fmt.Fprintf(w, "%s does not exist; run `bbctl secrets generate %s`\n", cfg.SecretsSSMPath, cfg.Name)
 					return
 				}
 				fmt.Fprintf(w, "%s\n", cfg.SecretsSSMPath)

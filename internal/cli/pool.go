@@ -26,9 +26,8 @@ func (a *app) poolAddCmd() *cobra.Command {
 	var nodes int
 	var withMgmt bool
 	cmd := &cobra.Command{
-		Use:         "add POOL",
-		Annotations: map[string]string{storageArgKey: storageBeforeOne},
-		Short:       "Add a pool to bbctl.yaml (then run bbctl apply)",
+		Use:   "add POOL",
+		Short: "Add a pool to bbctl.yaml (then run bbctl apply)",
 		Long: `add appends a pool with the default sizing; edit bbctl.yaml to change it.
 
 Without a management plane each pool is independent: its own API endpoints,
@@ -37,8 +36,8 @@ management plane (if there is none), which presents one API for every pool
 and federates their metrics. Adding it switches existing pools to
 mgmt-federated metrics and moves Grafana to mgmt, which re-provisions their
 nodes on the next apply; the CSI driver then points at the mgmt nodes.`,
-		Example: `  bbctl pool add pool2 --az us-east-1b             # an independent pool
-  bbctl pool add pool2 --with-mgmt && bbctl apply   # pools behind a management plane`,
+		Example: `  bbctl pool add prod pool2 --az us-east-1b                     # an independent pool
+  bbctl pool add prod pool2 --with-mgmt && bbctl apply prod   # pools behind a management plane`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := a.load()
@@ -91,18 +90,18 @@ nodes on the next apply; the CSI driver then points at the mgmt nodes.`,
 				notes = []string{
 					fmt.Sprintf("added a management plane (%d x %s)", c.Mgmt.NodesCount, c.Mgmt.InstanceType),
 					"existing pools switch to mgmt-federated metrics and Grafana moves to mgmt; their nodes re-provision on apply",
-					"after apply, point the CSI driver at the mgmt nodes (outputs.node_private_ips of the mgmt stack in `bbctl status --json`)",
+					"after apply, point the CSI driver at the mgmt nodes (outputs.node_private_ips of the mgmt stack in `bbctl status " + c.Name + " --json`)",
 				}
 			} else if c.Mgmt == nil {
 				notes = []string{"independent pool: its own API endpoints (outputs.node_mgmt_private_ips of pool/" + p.Name + ") and its own Grafana"}
 			}
-			res := map[string]any{"pool": p, "mgmt": c.Mgmt != nil, "mgmt_added": mgmtAdded, "notes": notes, "next": "bbctl apply"}
+			res := map[string]any{"pool": p, "mgmt": c.Mgmt != nil, "mgmt_added": mgmtAdded, "notes": notes, "next": "bbctl apply " + c.Name}
 			return ui.Result(res, func(w io.Writer) {
 				fmt.Fprintf(w, "added %s: %d x %s in %s\n", p.Name, p.NodesCount, p.InstanceType, p.AZ)
 				for _, n := range notes {
 					fmt.Fprintf(w, "  - %s\n", n)
 				}
-				fmt.Fprintln(w, "next: bbctl apply")
+				fmt.Fprintln(w, "next: bbctl apply "+c.Name)
 			})
 		},
 	}
@@ -117,9 +116,8 @@ nodes on the next apply; the CSI driver then points at the mgmt nodes.`,
 func (a *app) poolRemoveCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
-		Use:         "remove POOL",
-		Annotations: map[string]string{storageArgKey: storageBeforeOne},
-		Short:       "Destroy a pool and remove it from bbctl.yaml",
+		Use:   "remove POOL",
+		Short: "Destroy a pool and remove it from bbctl.yaml",
 		Long: `remove destroys the pool's stack (nodes, cache disks AND its buckets with
 all volume data), removes it from bbctl.yaml, then re-applies mgmt so it
 forgets the pool.`,
@@ -135,7 +133,7 @@ forgets the pool.`,
 				return ui.Errf(ui.ExitUsage, "", "no pool %q", name)
 			}
 			if len(d.Cfg.Pools) == 1 {
-				return ui.Errf(ui.ExitUsage, "use `bbctl destroy` to remove the whole deployment", "%q is the only pool", name)
+				return ui.Errf(ui.ExitUsage, "use `bbctl destroy "+d.Cfg.Name+"` to remove the whole deployment", "%q is the only pool", name)
 			}
 			if err := d.Prepare(ctx, deploy.BucketRequire); err != nil {
 				return err
@@ -163,7 +161,7 @@ forgets the pool.`,
 				return err
 			}
 			if err := staged.Commit(); err != nil {
-				return ui.Wrap(ui.ExitError, fmt.Sprintf("pool %q is destroyed but still listed in %s; re-run `bbctl pool remove %s` (safe: nothing is left to destroy). Do not run `bbctl apply` first: it would recreate the pool", name, a.configPath, name), err)
+				return ui.Wrap(ui.ExitError, fmt.Sprintf("pool %q is destroyed but still listed in %s; re-run `bbctl pool remove %s %s` (safe: nothing is left to destroy). Do not run `bbctl apply` first: it would recreate the pool", name, a.configPath, d.Cfg.Name, name), err)
 			}
 			d.Cfg = &next
 			if d.Cfg.Mgmt != nil {
@@ -178,7 +176,7 @@ forgets the pool.`,
 				res = append(res, more...)
 				if err != nil {
 					e := ui.Wrap(ui.ExitTerraform, "", err)
-					e.Hint = fmt.Sprintf("pool %q is removed; finish with `bbctl apply --stack mgmt` so mgmt forgets it", name)
+					e.Hint = fmt.Sprintf("pool %q is removed; finish with `bbctl apply %s --stack mgmt` so mgmt forgets it", name, d.Cfg.Name)
 					return e
 				}
 			}

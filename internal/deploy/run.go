@@ -108,7 +108,7 @@ func (d *Deployment) previewNetwork(ctx context.Context) (tf.PlanSummary, error)
 // bucket is created only after approval. Returns the approved network plan.
 func (d *Deployment) approveFirstDeploy(ctx context.Context, only map[string]bool, approve Approve) (tf.PlanSummary, error) {
 	if !selected(only, d.Stacks[0].ID) {
-		return tf.PlanSummary{}, ui.Errf(ui.ExitUsage, "run `bbctl apply` without --stack, or with --stack network, first",
+		return tf.PlanSummary{}, ui.Errf(ui.ExitUsage, "run `bbctl apply "+d.Cfg.Name+"` without --stack, or with --stack network, first",
 			"nothing is deployed yet: the network must be applied before %v", keys(only))
 	}
 	ui.Logf("network: planning (first deploy)")
@@ -172,7 +172,7 @@ func (d *Deployment) Apply(ctx context.Context, only map[string]bool, approve Ap
 		}
 		ui.Logf("%s: applying (+%d ~%d -%d)", s.ID, p.Add, p.Change, p.Destroy)
 		if err := r.ApplyPlan(ctx); err != nil {
-			return res, ui.Wrap(ui.ExitTerraform, "fix the error above and re-run `bbctl apply`; finished stacks are skipped", fmt.Errorf("%s: terraform apply: %w", s.ID, err))
+			return res, ui.Wrap(ui.ExitTerraform, "fix the error above and re-run `bbctl apply "+d.Cfg.Name+"`; finished stacks are skipped", fmt.Errorf("%s: terraform apply: %w", s.ID, err))
 		}
 		res = append(res, StackResult{ID: s.ID, Status: "applied", Plan: &p})
 	}

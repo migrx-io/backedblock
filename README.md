@@ -229,13 +229,13 @@ question has a flag (see `bbctl config create --help`). A flag that is given
 is not asked, and without a terminal nothing is asked.
 
 Each storage is one file, `NAME.bbctl.yaml`, and one deployment. Several can
-share a directory: commands take the name as their first argument
-(`bbctl plan NAME`, `bbctl pool add NAME pool2`), or use the only one there.
+share a directory: every command that uses a config takes the name as its
+first argument (`bbctl plan NAME`, `bbctl pool add NAME pool2`).
 `bbctl config list` shows them. `bbctl config delete NAME` removes the file
 and leaves AWS alone, so `bbctl destroy NAME` first if it's deployed.
 
 A workload too big for one pool gets several identical pools. Add more with
-`bbctl pool add pool2`, then `bbctl apply`:
+`bbctl pool add prod pool2`, then `bbctl apply prod`:
 - **Without a management plane**, each pool is independent, with its own API
   endpoints and Grafana.
 - **With one**, it presents one API for every pool and federates their
@@ -247,11 +247,11 @@ Day-2 commands:
 
 | Command | What it does |
 |---|---|
-| `bbctl exec [--all] -- CMD` | run a shell command on nodes via SSM Run Command and return its output and exit code; no SSH and no terminal |
-| `bbctl connect [--forward 3000]` | interactive shell or port forward (Grafana) via Session Manager, built in; no plugin to install |
-| `bbctl secrets get MGX_GW_ADMIN_PASSWD` | the `mgx-cli` admin password |
-| `bbctl plan` / `bbctl destroy` | preview, or tear down in reverse order |
-| `bbctl render` | write the generated Terraform to `.bbctl/NAME/stacks/` for review |
+| `bbctl exec NAME [--all] -- CMD` | run a shell command on nodes via SSM Run Command and return its output and exit code; no SSH and no terminal |
+| `bbctl connect NAME [--forward 3000]` | interactive shell or port forward (Grafana) via Session Manager, built in; no plugin to install |
+| `bbctl secrets get NAME MGX_GW_ADMIN_PASSWD` | the `mgx-cli` admin password |
+| `bbctl plan NAME` / `bbctl destroy NAME` | preview, or tear down in reverse order |
+| `bbctl render NAME` | write the generated Terraform to `.bbctl/NAME/stacks/` for review |
 
 **Scripts and agents:** every command takes `--json`. The result goes to
 stdout, progress and Terraform logs go to stderr with `-v`, and failures come back as
@@ -266,8 +266,8 @@ Every node ships `mgx-cli`, and the nodes of a pool are equivalent members of
 one cluster, so any node can drive the whole thing:
 
 ```
-$ bbctl secrets get MGX_GW_ADMIN_PASSWD    # the login password
-$ bbctl connect                            # shell on a node over Session Manager
+$ bbctl secrets get prod MGX_GW_ADMIN_PASSWD    # the login password
+$ bbctl connect prod                            # shell on a node over Session Manager
 $ mgx-cli
 mgx-core:127.0.0.1:nologin> login admin --cluster main --ns main
 Password:
@@ -279,10 +279,10 @@ Every command set (nodes, pools, volumes, snapshots) is documented in the
 
 **Grafana** (when `enable_grafana` is on) runs on the cluster's VIP node, and the
 VIP can move. Run `cluster list` in mgx-cli. `vip_host.ip` is the node that
-currently holds it. Match that IP against `bbctl status`, then forward the port:
+currently holds it. Match that IP against `bbctl status prod`, then forward the port:
 
 ```bash
-bbctl connect --node i-0123456789abcdef0 --forward 3000   # http://localhost:3000
+bbctl connect prod --node i-0123456789abcdef0 --forward 3000   # http://localhost:3000
 ```
 
 ### Requirements
@@ -294,7 +294,7 @@ bbctl connect --node i-0123456789abcdef0 --forward 3000   # http://localhost:300
   the one listed for your region in [Node AMIs](https://backedblock.io/docs/node-amis).
 
 To call the modules from your own Terraform instead, see
-[`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx). `bbctl render`
+[`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx). `bbctl render prod`
 writes the exact stacks bbctl runs, if you want a working starting point.
 
 ---

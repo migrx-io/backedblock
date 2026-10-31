@@ -29,8 +29,8 @@ SSM agent status and the status of its provisioning run (setup-node.sh).
 apply returns as soon as the provisioning run is created; the nodes configure
 themselves afterwards. --wait polls until every node of every applied stack
 reports provision=Success, and fails as soon as one reports Failed.`,
-		Example: `  bbctl status
-  bbctl apply --auto-approve && bbctl status --wait --json`,
+		Example: `  bbctl status prod
+  bbctl apply prod --auto-approve && bbctl status prod --wait --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			d, err := a.open(ctx)
@@ -76,7 +76,7 @@ func waitProvisioned(ctx context.Context, d *deploy.Deployment, st []deploy.Stac
 		for _, s := range st {
 			for _, n := range s.Nodes {
 				if n.ProvisionFailed() {
-					e := ui.Errf(ui.ExitError, fmt.Sprintf("inspect the node with `bbctl exec %s --node %s -- 'journalctl -n 200 --no-pager'`; fix and re-run `bbctl apply`", stackFlag(s.ID), n.InstanceID),
+					e := ui.Errf(ui.ExitError, fmt.Sprintf("inspect the node with `bbctl exec %s %s --node %s -- 'journalctl -n 200 --no-pager'`; fix and re-run `bbctl apply %s`", d.Cfg.Name, stackFlag(s.ID), n.InstanceID, d.Cfg.Name),
 						"%s: provisioning failed on %s", s.ID, n.InstanceID)
 					if n.ProvisionDetail != "" {
 						e.Details = []string{n.ProvisionDetail}
@@ -89,7 +89,7 @@ func waitProvisioned(ctx context.Context, d *deploy.Deployment, st []deploy.Stac
 			return st, nil
 		}
 		if time.Now().After(deadline) {
-			return st, ui.Errf(ui.ExitError, "re-run `bbctl status --wait` to keep waiting", "nodes not provisioned after %s", timeout)
+			return st, ui.Errf(ui.ExitError, "re-run `bbctl status "+d.Cfg.Name+" --wait` to keep waiting", "nodes not provisioned after %s", timeout)
 		}
 		ui.Logf("waiting for provisioning: %d/%d nodes done", countProvisioned(st), countNodes(st))
 		select {
@@ -177,7 +177,7 @@ func (t *target) resolve(ctx context.Context, d *deploy.Deployment) ([]string, e
 	}
 	ids := deploy.InstanceIDs(out)
 	if len(ids) == 0 {
-		return nil, ui.Errf(ui.ExitUsage, "run `bbctl apply`", "%s has no nodes yet", stack.ID)
+		return nil, ui.Errf(ui.ExitUsage, "run `bbctl apply "+d.Cfg.Name+"`", "%s has no nodes yet", stack.ID)
 	}
 	switch {
 	case t.all:
@@ -205,7 +205,7 @@ func (t *target) resolve(ctx context.Context, d *deploy.Deployment) ([]string, e
 			return []string{n.InstanceID}, nil
 		}
 	}
-	return nil, ui.Errf(ui.ExitAWS, "check `bbctl status`; nodes need outbound access to SSM through the NAT gateway", "no node of %s is online in SSM", stack.ID)
+	return nil, ui.Errf(ui.ExitAWS, "check `bbctl status "+d.Cfg.Name+"`; nodes need outbound access to SSM through the NAT gateway", "no node of %s is online in SSM", stack.ID)
 }
 
 // findInstance looks for t.node in every applied pool and mgmt stack.
@@ -231,7 +231,7 @@ func (t *target) findInstance(ctx context.Context, d *deploy.Deployment) ([]stri
 			}
 		}
 	}
-	return nil, ui.Errf(ui.ExitUsage, "`bbctl status` lists every node with its instance ID", "%s is not a node of this deployment", t.node)
+	return nil, ui.Errf(ui.ExitUsage, "`bbctl status "+d.Cfg.Name+"` lists every node with its instance ID", "%s is not a node of this deployment", t.node)
 }
 
 // stackFlag is the --pool/--mgmt flag that selects a stack by ID.
@@ -246,18 +246,17 @@ func (a *app) execCmd() *cobra.Command {
 	var t target
 	var timeout time.Duration
 	cmd := &cobra.Command{
-		Use:         "exec -- COMMAND...",
-		Annotations: map[string]string{storageArgKey: storageBeforeDash},
-		Short:       "Run a shell command on nodes through SSM (non-interactive)",
-		Hidden:      true, // runs, but kept out of the command list
+		Use:    "exec -- COMMAND...",
+		Short:  "Run a shell command on nodes through SSM (non-interactive)",
+		Hidden: true, // runs, but kept out of the command list
 		Long: `exec runs a command as root on one node (default) or every node of a stack
 (--all) through SSM Run Command and returns its exit code and output. It needs
 no SSH or bastion and no terminal, which makes it the way for scripts
 and agents to operate the cluster. Exit code is 1 if the command failed on
 any node.`,
-		Example: `  bbctl exec -- uptime
-  bbctl exec --all --json -- 'df -h /'
-  bbctl exec --mgmt --node 0 -- journalctl -n 50 --no-pager`,
+		Example: `  bbctl exec prod -- uptime
+  bbctl exec prod --all --json -- 'df -h /'
+  bbctl exec prod --mgmt --node 0 -- journalctl -n 50 --no-pager`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -319,10 +318,10 @@ nothing inbound is opened. Run mgx-cli in the shell to manage the cluster.
 The Session Manager protocol is built into bbctl: nothing else to install. A
 shell needs a terminal; for scripts and agents use ` + "`bbctl exec`" + `, which runs
 a command and returns its output. --forward runs until Ctrl-C.`,
-		Example: `  bbctl connect
-  bbctl connect --pool pool2 --node 1
-  bbctl connect --forward 3000            # Grafana at http://localhost:3000
-  bbctl connect --forward 3001:3000`,
+		Example: `  bbctl connect prod
+  bbctl connect prod --pool pool2 --node 1
+  bbctl connect prod --forward 3000            # Grafana at http://localhost:3000
+  bbctl connect prod --forward 3001:3000`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			remote, local, err := parseForward(forward)
@@ -337,7 +336,7 @@ a command and returns its output. --forward runs until Ctrl-C.`,
 				return err
 			}
 			if local == 0 && !term.IsTerminal(int(os.Stdin.Fd())) {
-				return ui.Errf(ui.ExitUsage, "use `bbctl exec -- '<command>'` to run a command without a terminal",
+				return ui.Errf(ui.ExitUsage, "use `bbctl exec "+d.Cfg.Name+" -- '<command>'` to run a command without a terminal",
 					"an interactive shell needs a terminal")
 			}
 			ids, err := t.resolve(ctx, d)
@@ -351,7 +350,7 @@ a command and returns its output. --forward runs until Ctrl-C.`,
 			}
 			// Does not return on success: the session ends the process.
 			if err := d.AWS.Session(ctx, ids[0], remote, local, a.profile); err != nil {
-				return ui.Wrap(ui.ExitAWS, "check `bbctl status`: the node must be running with ssm=Online", err)
+				return ui.Wrap(ui.ExitAWS, "check `bbctl status "+d.Cfg.Name+"`: the node must be running with ssm=Online", err)
 			}
 			return nil
 		},

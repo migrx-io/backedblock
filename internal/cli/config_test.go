@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"os"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -49,37 +48,15 @@ func TestCalculatorPoolDecodesOverDefaults(t *testing.T) {
 }
 
 func TestResolveConfig(t *testing.T) {
-	dir := t.TempDir()
-	wd, _ := os.Getwd()
-	defer os.Chdir(wd)
-	os.Chdir(dir)
-
-	resolve := func(storage, path string) (string, error) {
-		a := &app{storage: storage, configPath: path}
+	resolve := func(storage string) (string, error) {
+		a := &app{storage: storage}
 		err := a.resolveConfig()
 		return a.configPath, err
 	}
-	if got, err := resolve("", ""); err != nil || got != "bbctl.yaml" {
-		t.Errorf("empty dir: %q, %v", got, err)
+	if got, err := resolve("dev"); err != nil || got != "dev.bbctl.yaml" {
+		t.Errorf("NAME dev: %q, %v", got, err)
 	}
-	os.WriteFile("prod.bbctl.yaml", nil, 0o644)
-	if got, err := resolve("", ""); err != nil || got != "prod.bbctl.yaml" {
-		t.Errorf("one storage: %q, %v", got, err)
-	}
-	os.WriteFile("bbctl.yaml", nil, 0o644)
-	if _, err := resolve("", ""); err == nil {
-		t.Error("storage plus bbctl.yaml: want an error")
-	}
-	if got, err := resolve("dev", ""); err != nil || got != "dev.bbctl.yaml" {
-		t.Errorf("--storage dev: %q, %v", got, err)
-	}
-	if _, err := resolve("../x", ""); err == nil {
-		t.Error("--storage ../x: want an error")
-	}
-	if _, err := resolve("dev", "a.yaml"); err == nil {
-		t.Error("--storage and --config: want an error")
-	}
-	if got, err := resolve("", "a.yaml"); err != nil || got != "a.yaml" {
-		t.Errorf("--config: %q, %v", got, err)
+	if _, err := resolve("../x"); err == nil {
+		t.Error("NAME ../x: want an error")
 	}
 }

@@ -42,10 +42,11 @@ is added in front of them unless you pass `--mgmt=false`. Ask the human which
 they want.
 
 The storage name is the first argument of every command that uses a config,
-e.g. `bbctl pool add <name> pool2` or `bbctl exec <name> -- uptime`. It can be
-left out when the directory has only one. `bbctl config list --json` lists them. `bbctl config delete <name> --yes
---json` removes the file only; it destroys nothing in AWS, so run `destroy`
-first (with the human's approval) if the storage is deployed.
+e.g. `bbctl pool add <name> pool2` or `bbctl exec <name> -- uptime`, and it is
+required. `bbctl config list --json` lists them.
+`bbctl config delete <name> --yes --json` removes the file only; it destroys
+nothing in AWS, so run `destroy` first (with the human's approval) if the
+storage is deployed.
 
 Before `apply`, get the human's approval. It creates billable EC2, EBS, NAT
 and S3 resources. Show them the `plan` output, the instance count and type
@@ -68,10 +69,10 @@ no dedicated field go under a pool's `extra:` map, for example
 ## Operate
 
 ```bash
-bbctl exec --json -- '<shell command>'            # one node, as root, via SSM Run Command
-bbctl exec --all --json -- '<shell command>'      # every node of the first pool
-bbctl exec --pool pool2 --node 1 --json -- '...'  # a specific node
-bbctl secrets get MGX_GW_ADMIN_PASSWD --json      # password for mgx-cli `login admin`
+bbctl exec <name> --json -- '<shell command>'            # one node, as root, via SSM Run Command
+bbctl exec <name> --all --json -- '<shell command>'      # every node of the first pool
+bbctl exec <name> --pool pool2 --node 1 --json -- '...'  # a specific node
+bbctl secrets get <name> MGX_GW_ADMIN_PASSWD --json      # password for mgx-cli `login admin`
 ```
 
 Use `exec`, not `connect`. `connect` opens an interactive session, which
@@ -80,6 +81,6 @@ needs a human at a terminal. Each `exec` result carries `status`,
 
 ## Tear down
 
-`bbctl destroy --auto-approve --json` deletes everything, including volume
+`bbctl destroy <name> --auto-approve --json` deletes everything, including volume
 data in the pool buckets. Never run it without the human's explicit approval.
 The state bucket and the node secret are kept.

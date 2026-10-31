@@ -79,7 +79,7 @@ func (d *Deployment) Prepare(ctx context.Context, mode BucketMode) error {
 		return ui.Wrap(ui.ExitAWS, "", err)
 	}
 	if !exists && mode == BucketRequire {
-		return ui.Errf(ui.ExitAWS, "nothing is deployed yet; run `bbctl apply`", "state bucket s3://%s does not exist", d.Cfg.State.Bucket)
+		return ui.Errf(ui.ExitAWS, "nothing is deployed yet; run `bbctl apply "+d.Cfg.Name+"`", "state bucket s3://%s does not exist", d.Cfg.State.Bucket)
 	}
 	d.noState = !exists
 
@@ -110,10 +110,10 @@ func (d *Deployment) CheckSecrets(ctx context.Context) error {
 		return ui.Wrap(ui.ExitAWS, "", fmt.Errorf("read %s: %w", d.Cfg.SecretsSSMPath, err))
 	}
 	if !found {
-		return ui.Errf(ui.ExitAWS, "run `bbctl secrets generate`", "node secret %s does not exist", d.Cfg.SecretsSSMPath)
+		return ui.Errf(ui.ExitAWS, "run `bbctl apply "+d.Cfg.Name+"`, which creates it", "node secret %s does not exist", d.Cfg.SecretsSSMPath)
 	}
 	if miss := awsx.MissingSecrets(s); len(miss) > 0 {
-		return ui.Errf(ui.ExitAWS, "run `bbctl secrets generate --force` or set them with `bbctl secrets set`", "node secret %s is missing %v", d.Cfg.SecretsSSMPath, miss)
+		return ui.Errf(ui.ExitAWS, "run `bbctl secrets generate "+d.Cfg.Name+" --force` or set them with `bbctl secrets set "+d.Cfg.Name+"`", "node secret %s is missing %v", d.Cfg.SecretsSSMPath, miss)
 	}
 	return nil
 }

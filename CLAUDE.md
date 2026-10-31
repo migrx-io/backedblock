@@ -27,11 +27,11 @@ pools from SSM, so it comes last). Each stack has its own state key in the
 S3 state bucket and uses S3-native locking (`use_lockfile`, needs Terraform
 1.10 or later). Pools and mgmt read network outputs via `terraform_remote_state`.
 The generated stacks live in `.bbctl/<name>/stacks/` next to the config
-(git-ignored). A plain `bbctl.yaml` keeps `.bbctl/` itself, because its SSH
-key is registered with EC2 and moving it would replace the key pair.
-`resolveConfig` picks the file: `--config`, the NAME argument (`withConfig`
-splits it from a command's own arguments), or the only config in
-the directory. Several is an error, never a guess.
+(git-ignored), with the SSH key registered with EC2: moving it would replace
+the key pair. Every command that uses a config takes its NAME as the first
+argument (`withConfig` adds it); `resolveConfig` turns it into the path. The
+NAME is required, never guessed from the directory: with several configs,
+guessing would plan or apply the wrong one.
 
 `init` only downloads Terraform and the modules. `config create` does the AWS
 discovery, and sizes the pools by POSTing the workload to
@@ -106,7 +106,7 @@ AWS is smoke-tested by hand:
 ```bash
 go build -o $SCRATCH/bbctl ./cmd/bbctl
 cd $SCRATCH/smoke && $SCRATCH/bbctl init && $SCRATCH/bbctl config create bbsmoke --region us-east-1 --force --json </dev/null
-$SCRATCH/bbctl doctor; $SCRATCH/bbctl plan --json; $SCRATCH/bbctl render
+$SCRATCH/bbctl doctor bbsmoke; $SCRATCH/bbctl plan bbsmoke --json; $SCRATCH/bbctl render bbsmoke
 # validate rendered stacks without a backend:
 TF=~/Library/Caches/bbctl/terraform/<ver>/terraform
 (cd .bbctl/bbsmoke/stacks/network && $TF init -backend=false && $TF validate)
