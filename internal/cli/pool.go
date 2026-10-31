@@ -27,15 +27,8 @@ func (a *app) poolAddCmd() *cobra.Command {
 	var withMgmt bool
 	cmd := &cobra.Command{
 		Use:   "add POOL",
-		Short: "Add a pool to bbctl.yaml (then run bbctl apply)",
-		Long: `add appends a pool with the default sizing; edit bbctl.yaml to change it.
-
-Without a management plane each pool is independent: its own API endpoints,
-its own Grafana and a full metrics replica on every node. --with-mgmt adds a
-management plane (if there is none), which presents one API for every pool
-and federates their metrics. Adding it switches existing pools to
-mgmt-federated metrics and moves Grafana to mgmt, which re-provisions their
-nodes on the next apply; the CSI driver then points at the mgmt nodes.`,
+		Short: "Add a pool to NAME.bbctl.yaml (then run bbctl apply NAME)",
+		Long:  `add appends a pool with the default sizing.`,
 		Example: `  bbctl pool add prod pool2 --az us-east-1b                     # an independent pool
   bbctl pool add prod pool2 --with-mgmt && bbctl apply prod   # pools behind a management plane`,
 		Args: cobra.ExactArgs(1),

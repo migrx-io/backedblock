@@ -19,9 +19,7 @@ func (a *app) planCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plan",
 		Short: "Show what apply would change, without changing anything",
-		Long: `plan renders the stacks and runs terraform plan on each. Pools and mgmt read
-the network's outputs, so before the network exists they are reported as
-skipped and planned during apply instead.`,
+		Long:  `plan renders the stacks and runs terraform plan on each.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			d, err := a.open(ctx)
@@ -52,13 +50,7 @@ func (a *app) applyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Create or update the deployment",
-		Long: `apply plans and applies each stack in order: network, pools, mgmt.
-
-It asks before each change; --auto-approve skips the prompts (required
-without a TTY). Nothing is created before an approval: a missing node secret
-is created once you approve it, and on a first deploy the Terraform state
-bucket is listed in the network plan and created once that plan is approved.
-Re-running is safe: stacks with no changes are skipped.`,
+		Long:  `apply plans and applies each stack in order: network, pools, mgmt.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			d, err := a.open(ctx)
@@ -94,9 +86,7 @@ func (a *app) destroyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "destroy",
 		Short: "Destroy the deployment (mgmt, pools, then network)",
-		Long: `destroy tears stacks down in reverse order. Pools are created with
-s3_force_destroy, so their buckets AND THE VOLUME DATA IN THEM are deleted.
-The state bucket and the node secret are kept.`,
+		Long:  `destroy tears stacks down in reverse order.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			d, err := a.open(ctx)

@@ -312,15 +312,9 @@ func (a *app) connectCmd() *cobra.Command {
 		Use:   "connect",
 		Short: "Open a shell on a node, or forward a port from it, over SSM",
 		Long: `connect starts an interactive Session Manager shell on a node, or with
---forward a local port forward (e.g. Grafana on 3000). Nodes have no public IP;
-nothing inbound is opened. Run mgx-cli in the shell to manage the cluster.
-
-The Session Manager protocol is built into bbctl: nothing else to install. A
-shell needs a terminal; for scripts and agents use ` + "`bbctl exec`" + `, which runs
-a command and returns its output. --forward runs until Ctrl-C.`,
+--forward a local port forward.`,
 		Example: `  bbctl connect prod
   bbctl connect prod --pool pool2 --node 1
-  bbctl connect prod --forward 3000            # Grafana at http://localhost:3000
   bbctl connect prod --forward 3001:3000`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
