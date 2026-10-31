@@ -47,11 +47,14 @@ func (d *Deployment) Plan(ctx context.Context, only map[string]bool) ([]StackRes
 			res = append(res, StackResult{ID: s.ID, Status: "skipped", Reason: "network is not applied yet; planned during apply"})
 			continue
 		}
+		st := ui.Begin(s.ID, "planning", 0)
 		r, err := d.Runner(ctx, s)
 		if err != nil {
+			st.End("", false)
 			return res, err
 		}
 		p, err := r.Plan(ctx, tf.PlanReadOnly)
+		st.End("", false)
 		if err != nil {
 			return res, ui.Wrap(ui.ExitTerraform, "", fmt.Errorf("%s: terraform plan: %w", s.ID, err))
 		}
@@ -92,11 +95,14 @@ func (d *Deployment) previewNetwork(ctx context.Context) (tf.PlanSummary, error)
 	if err := render.WriteLocal(d.Cfg, s, d.Stacks, d.inputs, dir); err != nil {
 		return tf.PlanSummary{}, err
 	}
+	st := ui.Begin(s.ID, "planning", 0)
 	r, err := d.runnerIn(ctx, s, dir)
 	if err != nil {
+		st.End("", false)
 		return tf.PlanSummary{}, err
 	}
 	p, err := r.Plan(ctx, tf.PlanReadOnly)
+	st.End("", false)
 	if err != nil {
 		return tf.PlanSummary{}, ui.Wrap(ui.ExitTerraform, "", fmt.Errorf("%s: terraform plan: %w", s.ID, err))
 	}
@@ -152,12 +158,15 @@ func (d *Deployment) Apply(ctx context.Context, only map[string]bool, approve Ap
 		if !selected(only, s.ID) {
 			continue
 		}
+		ui.Logf("%s: planning", s.ID)
+		st := ui.Begin(s.ID, "planning", 0)
 		r, err := d.Runner(ctx, s)
 		if err != nil {
+			st.End("", false)
 			return res, err
 		}
-		ui.Logf("%s: planning", s.ID)
 		p, err := r.Plan(ctx, tf.PlanApply)
+		st.End("", false)
 		if err != nil {
 			return res, ui.Wrap(ui.ExitTerraform, "", fmt.Errorf("%s: terraform plan: %w", s.ID, err))
 		}
@@ -171,9 +180,12 @@ func (d *Deployment) Apply(ctx context.Context, only map[string]bool, approve Ap
 			}
 		}
 		ui.Logf("%s: applying (+%d ~%d -%d)", s.ID, p.Add, p.Change, p.Destroy)
-		if err := r.ApplyPlan(ctx); err != nil {
+		st = ui.Begin(s.ID, "applying", p.Add+p.Change+p.Destroy)
+		if err := r.ApplyPlan(ctx, st.Step); err != nil {
+			st.End("failed", false)
 			return res, ui.Wrap(ui.ExitTerraform, "fix the error above and re-run `bbctl apply "+d.Cfg.Name+"`; finished stacks are skipped", fmt.Errorf("%s: terraform apply: %w", s.ID, err))
 		}
+		st.End("applied", true)
 		res = append(res, StackResult{ID: s.ID, Status: "applied", Plan: &p})
 	}
 	return res, nil
@@ -195,12 +207,15 @@ func (d *Deployment) Destroy(ctx context.Context, only map[string]bool, approve 
 			res = append(res, StackResult{ID: s.ID, Status: "skipped", Reason: "never applied"})
 			continue
 		}
+		ui.Logf("%s: planning destroy", s.ID)
+		st := ui.Begin(s.ID, "planning", 0)
 		r, err := d.Runner(ctx, s)
 		if err != nil {
+			st.End("", false)
 			return res, err
 		}
-		ui.Logf("%s: planning destroy", s.ID)
 		p, err := r.Plan(ctx, tf.PlanDestroy)
+		st.End("", false)
 		if err != nil {
 			return res, ui.Wrap(ui.ExitTerraform, "", fmt.Errorf("%s: terraform plan -destroy: %w", s.ID, err))
 		}
@@ -212,9 +227,12 @@ func (d *Deployment) Destroy(ctx context.Context, only map[string]bool, approve 
 			return res, err
 		}
 		ui.Logf("%s: destroying %d resources", s.ID, p.Destroy)
-		if err := r.ApplyPlan(ctx); err != nil {
-			return res, ui.Wrap(ui.ExitTerraform, "", fmt.Errorf("%s: terraform destroy: %w", s.ID, err))
+		st = ui.Begin(s.ID, "destroying", p.Destroy)
+		if err := r.ApplyPlan(ctx, st.Step); err != nil {
+			st.End("failed", false)
+			return res, ui.Wrap(ui.ExitTerraform, "fix the error above and re-run `bbctl destroy "+d.Cfg.Name+"`; finished stacks are skipped", fmt.Errorf("%s: terraform destroy: %w", s.ID, err))
 		}
+		st.End("destroyed", true)
 		res = append(res, StackResult{ID: s.ID, Status: "destroyed", Plan: &p})
 	}
 	return res, nil

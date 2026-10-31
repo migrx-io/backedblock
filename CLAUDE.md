@@ -44,7 +44,10 @@ Each of these fixed a real bug or review finding. Keep them.
 
 - **Stdout carries exactly one result:** JSON with `--json`, else text.
   Progress (`ui.Logf`) and Terraform's output go to stderr, and only with
-  `-v/--verbose`. Approval prompts print their plan summary regardless. Errors are
+  `-v/--verbose`. Approval prompts print their plan summary regardless. On a
+  terminal, without `-v` or `--json`, long steps show a status line on stderr
+  (`ui.Begin`): a spinner, and for apply/destroy a bar counted from
+  Terraform's "complete after" lines. End it before any prompt. Errors are
   `ui.Error{code, error, hint, details}`.
 - **Exit codes are stable:** 1 other, 2 usage or config, 3 AWS, 4 Terraform,
   5 declined. `cli.SilentExit` sets a code after a result was already

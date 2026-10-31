@@ -1,8 +1,10 @@
 package tf
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,8 +15,8 @@ import (
 	"github.com/migrx-io/backedblock/internal/ui"
 )
 
-// Runner runs Terraform in one stack directory. Terraform's own output is
-// streamed to stderr so stdout stays reserved for bbctl's result.
+// Runner runs Terraform in one stack directory. With --verbose, Terraform's
+// own output is streamed to stderr; stdout stays reserved for bbctl's result.
 type Runner struct {
 	tf  *tfexec.Terraform
 	dir string
@@ -28,10 +30,12 @@ func NewRunner(execPath, dir, profile string) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
+	// tfexec puts Terraform's stderr in the error it returns, which bbctl
+	// prints; streaming it too would show every error twice.
 	if ui.Verbose {
 		t.SetStdout(os.Stderr)
+		t.SetStderr(os.Stderr)
 	}
-	t.SetStderr(os.Stderr)
 
 	// Share one provider cache across stacks and runs.
 	pluginCache := ""
@@ -148,10 +152,43 @@ func (r *Runner) Plan(ctx context.Context, mode PlanMode) (PlanSummary, error) {
 	return summarize(plan), nil
 }
 
-// ApplyPlan applies the plan file written by the last Plan.
-func (r *Runner) ApplyPlan(ctx context.Context) error {
+// ApplyPlan applies the plan file written by the last Plan. step, if not
+// nil, is called as each resource finishes (a replace counts twice, as in the
+// plan's totals). Without --verbose, Terraform's output is read only for that.
+func (r *Runner) ApplyPlan(ctx context.Context, step func()) error {
 	defer os.Remove(r.planFile())
+	if step != nil && !ui.Verbose {
+		r.tf.SetStdout(&finishedLines{step: step})
+		defer r.tf.SetStdout(io.Discard)
+	}
 	return r.tf.Apply(ctx, tfexec.DirOrPlan(r.planFile()))
+}
+
+// finishedLines calls step for each "<addr>: Creation complete after 3s"
+// style line of Terraform's output.
+type finishedLines struct {
+	step func()
+	buf  []byte
+}
+
+var finished = []string{": Creation complete after", ": Modifications complete after", ": Destruction complete after"}
+
+func (f *finishedLines) Write(p []byte) (int, error) {
+	f.buf = append(f.buf, p...)
+	for {
+		i := bytes.IndexByte(f.buf, '\n')
+		if i < 0 {
+			return len(p), nil
+		}
+		line := string(f.buf[:i])
+		f.buf = f.buf[i+1:]
+		for _, m := range finished {
+			if strings.Contains(line, m) {
+				f.step()
+				break
+			}
+		}
+	}
 }
 
 // Outputs returns the stack's outputs as plain JSON values. A stack that was

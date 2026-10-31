@@ -74,6 +74,8 @@ func Open(ctx context.Context, cfg *config.Config, configPath, profile string) (
 // mode), the terraform binary, the modules, an SSH key, and the rendered
 // stacks. It never changes anything in AWS. Every step is idempotent.
 func (d *Deployment) Prepare(ctx context.Context, mode BucketMode) error {
+	st := ui.Begin(d.Cfg.Name, "preparing", 0)
+	defer st.End("", false)
 	exists, err := d.AWS.StateBucketExists(ctx, d.Cfg.State.Bucket)
 	if err != nil {
 		return ui.Wrap(ui.ExitAWS, "", err)
