@@ -26,11 +26,10 @@ the human.
 bbctl init --json                            # downloads Terraform and the modules
 bbctl config create <name> --region <region> --volumes <n> --volume-size <gb> --json
                                              # writes <name>.bbctl.yaml; add --vpc if the region has several VPCs
-bbctl secrets generate -s <name> --json      # no-op ("exists") if already there
-bbctl doctor -s <name> --json                # every check must be "ok" or "warn"
-bbctl plan -s <name> --json                  # show the human the plan
-bbctl apply -s <name> --auto-approve --json  # 10-20 min
-bbctl status -s <name> --wait --json         # until every node reports provision "Success"
+bbctl doctor <name> --json                   # every check must be "ok" or "warn"
+bbctl plan <name> --json                     # show the human the plan
+bbctl apply <name> --auto-approve --json     # 10-20 min; creates the node secret if missing
+bbctl status <name> --wait --json            # until every node reports provision "Success"
 ```
 
 `config create` asks nothing under `--json`. Give the workload as flags:
@@ -42,8 +41,9 @@ for the CSI driver. When the workload needs several pools, a management plane
 is added in front of them unless you pass `--mgmt=false`. Ask the human which
 they want.
 
-`-s <name>` selects the storage. It can be left out when the directory has only
-one. `bbctl config list --json` lists them. `bbctl config delete <name> --yes
+The storage name is the first argument of every command that uses a config,
+e.g. `bbctl pool add <name> pool2` or `bbctl exec <name> -- uptime`. It can be
+left out when the directory has only one. `bbctl config list --json` lists them. `bbctl config delete <name> --yes
 --json` removes the file only; it destroys nothing in AWS, so run `destroy`
 first (with the human's approval) if the storage is deployed.
 

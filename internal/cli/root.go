@@ -58,24 +58,77 @@ storage config, NAME.bbctl.yaml.
 	return root
 }
 
-// withConfig gives a command (and its subcommands) the flags that select a
-// config, plus --profile when it calls AWS. Commands that need neither, such
-// as version or config list, don't list them.
+// Annotation on a command saying which leading argument, if any, is the
+// storage NAME. Without it the command takes no arguments of its own, so any
+// argument is the NAME.
+const storageArgKey = "storage-arg"
+
+const (
+	storageBeforeOne   = "before-one"   // [NAME] ARG: NAME when there are two
+	storageBeforePairs = "before-pairs" // [NAME] KEY=VALUE...: NAME has no "="
+	storageBeforeDash  = "before-dash"  // [NAME] -- COMMAND...: NAME before the --
+)
+
+// withConfig makes a command (and its subcommands) take the storage as an
+// optional first argument, NAME for NAME.bbctl.yaml, plus --config and, when
+// it calls AWS, --profile. With no NAME the only config in the directory is
+// used.
 func (a *app) withConfig(cmd *cobra.Command, aws bool) *cobra.Command {
-	// On each leaf, not the group, so help lists them under Flags.
 	for _, sub := range cmd.Commands() {
 		a.withConfig(sub, aws)
 	}
 	if cmd.HasSubCommands() {
 		return cmd
 	}
-	f := cmd.Flags()
-	f.StringVarP(&a.storage, "storage", "s", "", "named storage: uses <name>.bbctl.yaml (default: the only one here)")
-	f.StringVarP(&a.configPath, "config", "c", "", "path to a config file, instead of --storage")
+	cmd.Flags().StringVarP(&a.configPath, "config", "c", "", "path to a config file, instead of NAME")
 	if aws {
 		a.withProfile(cmd)
 	}
+
+	verb, rest, _ := strings.Cut(cmd.Use, " ")
+	cmd.Use = strings.TrimSpace(verb + " [NAME] " + rest)
+	args, run := cmd.Args, cmd.RunE
+	if args == nil {
+		args = cobra.ExactArgs(0)
+	}
+	cmd.Args = func(c *cobra.Command, in []string) error {
+		_, own := splitStorage(c, in)
+		return args(c, own)
+	}
+	cmd.RunE = func(c *cobra.Command, in []string) error {
+		name, own := splitStorage(c, in)
+		if name != "" {
+			if a.configPath != "" {
+				return ui.Errf(ui.ExitUsage, "pass one of them", "NAME and --config both given")
+			}
+			a.storage = name
+		}
+		return run(c, own)
+	}
 	return cmd
+}
+
+// splitStorage separates the storage NAME, if given, from a command's own
+// arguments.
+func splitStorage(c *cobra.Command, in []string) (string, []string) {
+	if len(in) == 0 {
+		return "", in
+	}
+	switch c.Annotations[storageArgKey] {
+	case storageBeforeOne:
+		if len(in) < 2 {
+			return "", in
+		}
+	case storageBeforePairs:
+		if strings.Contains(in[0], "=") {
+			return "", in
+		}
+	case storageBeforeDash:
+		if c.ArgsLenAtDash() != 1 {
+			return "", in
+		}
+	}
+	return in[0], in[1:]
 }
 
 func (a *app) withProfile(cmd *cobra.Command) *cobra.Command {
@@ -84,12 +137,12 @@ func (a *app) withProfile(cmd *cobra.Command) *cobra.Command {
 }
 
 // resolveConfig settles which config file a command works on: --config as
-// given, --storage's <name>.bbctl.yaml, else the only config in the directory
+// given, NAME's NAME.bbctl.yaml, else the only config in the directory
 // (a named storage or a plain bbctl.yaml). Several is an error, not a guess.
 func (a *app) resolveConfig() error {
 	switch {
 	case a.configPath != "" && a.storage != "":
-		return ui.Errf(ui.ExitUsage, "pass one of them", "--config and --storage both given")
+		return ui.Errf(ui.ExitUsage, "pass one of them", "NAME and --config both given")
 	case a.configPath != "":
 		return nil
 	case a.storage != "":
@@ -118,7 +171,7 @@ func (a *app) resolveConfig() error {
 		a.configPath = files[0]
 		return nil
 	}
-	e := ui.Errf(ui.ExitUsage, "pass --storage <name> (or --config <file>)", "%d configs here; pick one", len(files))
+	e := ui.Errf(ui.ExitUsage, "name one, e.g. `bbctl plan <name>` (or pass --config <file>)", "%d configs here; pick one", len(files))
 	e.Details = files
 	return e
 }

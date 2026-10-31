@@ -29,7 +29,8 @@ S3 state bucket and uses S3-native locking (`use_lockfile`, needs Terraform
 The generated stacks live in `.bbctl/<name>/stacks/` next to the config
 (git-ignored). A plain `bbctl.yaml` keeps `.bbctl/` itself, because its SSH
 key is registered with EC2 and moving it would replace the key pair.
-`resolveConfig` picks the file: `--config`, `--storage`, or the only config in
+`resolveConfig` picks the file: `--config`, the NAME argument (`withConfig`
+splits it from a command's own arguments), or the only config in
 the directory. Several is an error, never a guess.
 
 `init` only downloads Terraform and the modules. `config create` does the AWS

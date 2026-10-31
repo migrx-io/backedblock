@@ -48,14 +48,6 @@ func TestCalculatorPoolDecodesOverDefaults(t *testing.T) {
 	}
 }
 
-func TestUSD(t *testing.T) {
-	for in, want := range map[float64]string{0: "$0", 999.4: "$999", 12331.01: "$12,331", 1720000: "$1,720,000"} {
-		if got := usd(in); got != want {
-			t.Errorf("usd(%v) = %s, want %s", in, got, want)
-		}
-	}
-}
-
 func TestResolveConfig(t *testing.T) {
 	dir := t.TempDir()
 	wd, _ := os.Getwd()

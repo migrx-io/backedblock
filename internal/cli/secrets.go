@@ -75,10 +75,11 @@ is left alone (exit 0, status "exists") unless --force is given. Rotating with
 
 func (a *app) secretsSetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "set KEY=VALUE...",
-		Short:   "Set individual keys, keeping the others",
-		Example: "  bbctl secrets set MGX_GW_ADMIN_PASSWD=s3cret",
-		Args:    cobra.MinimumNArgs(1),
+		Use:         "set KEY=VALUE...",
+		Annotations: map[string]string{storageArgKey: storageBeforePairs},
+		Short:       "Set individual keys, keeping the others",
+		Example:     "  bbctl secrets set MGX_GW_ADMIN_PASSWD=s3cret",
+		Args:        cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := a.load()
 			if err != nil {
@@ -115,10 +116,11 @@ func (a *app) secretsSetCmd() *cobra.Command {
 
 func (a *app) secretsGetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "get KEY",
-		Short:   "Print one secret value (e.g. the admin password for mgx-cli)",
-		Example: "  bbctl secrets get MGX_GW_ADMIN_PASSWD",
-		Args:    cobra.ExactArgs(1),
+		Use:         "get KEY",
+		Annotations: map[string]string{storageArgKey: storageBeforeOne},
+		Short:       "Print one secret value (e.g. the admin password for mgx-cli)",
+		Example:     "  bbctl secrets get MGX_GW_ADMIN_PASSWD",
+		Args:        cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := a.load()
 			if err != nil {

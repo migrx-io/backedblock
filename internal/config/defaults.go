@@ -20,7 +20,7 @@ func DefaultPool(deployment, account, name, az string) Pool {
 	return Pool{
 		Name:             name,
 		AZ:               az,
-		Description:      fmt.Sprintf("Pool %s (EBS RAID0 cache)", name),
+		Description:      "Pool " + name,
 		Labels:           "name=" + name,
 		NodesCount:       DefaultNodesCount,
 		InstanceType:     DefaultInstanceType,

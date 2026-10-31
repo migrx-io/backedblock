@@ -216,25 +216,23 @@ go install github.com/migrx-io/backedblock/cmd/bbctl@latest
 ```bash
 bbctl init                        # download Terraform and the modules
 bbctl config create prod          # region, VPC, workload → prod.bbctl.yaml
-bbctl secrets generate            # random node secrets → SSM SecureString
-bbctl doctor                      # check everything apply needs
-bbctl apply                       # state bucket, network, pools, mgmt, in order
-bbctl status --wait               # until every node has finished provisioning
+bbctl apply prod                  # node secret, state bucket, network, pools, mgmt
+bbctl status prod --wait          # until every node has finished provisioning
 ```
 
 `config create` asks for the region, the VPC and the workload (volume count,
 size, throughput, IOPS). It sends the workload to the
 [cost calculator](https://backedblock.io/#calculator)'s API, which sizes the
-pools: instance type, node count, cache disks and cache sizes. It also prints
-the estimate and the StorageClass parameters. Every question has a flag (see
-`bbctl config create --help`). A flag that is given is not asked, and without
-a terminal nothing is asked.
+pools: instance type, node count, cache disks and cache sizes. With `--json`
+the result also carries the estimate and the StorageClass parameters. Every
+question has a flag (see `bbctl config create --help`). A flag that is given
+is not asked, and without a terminal nothing is asked.
 
 Each storage is one file, `NAME.bbctl.yaml`, and one deployment. Several can
-share a directory: commands pick one with `--storage NAME` (`-s`), or use the
-only one there. `bbctl config list` shows them. `bbctl config delete NAME`
-removes the file and leaves AWS alone, so `bbctl destroy -s NAME` first if
-it's deployed.
+share a directory: commands take the name as their first argument
+(`bbctl plan NAME`, `bbctl pool add NAME pool2`), or use the only one there.
+`bbctl config list` shows them. `bbctl config delete NAME` removes the file
+and leaves AWS alone, so `bbctl destroy NAME` first if it's deployed.
 
 A workload too big for one pool gets several identical pools. Add more with
 `bbctl pool add pool2`, then `bbctl apply`:

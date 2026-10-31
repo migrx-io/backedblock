@@ -248,11 +248,10 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 		return err
 	}
 
-	sel := " --storage " + name
 	res := configResult{
 		Config: path, Storage: name, Account: id.Account, Estimate: est, Settings: cfg,
 		StorageClass: est.Config.StorageClass,
-		Next:         []string{"review " + path, "bbctl secrets generate" + sel, "bbctl doctor" + sel, "bbctl plan" + sel, "bbctl apply" + sel},
+		Next:         []string{"review " + path, "bbctl apply " + name},
 	}
 	return ui.Result(res, func(w io.Writer) { printConfigResult(w, res, vpc, pools) })
 }
@@ -310,13 +309,6 @@ func printConfigResult(w io.Writer, res configResult, vpc awsx.VPC, pools int) {
 	if est := res.Estimate; est != nil {
 		in := est.Inputs
 		fmt.Fprintf(w, "  workload     %v volumes x %v GB, %v MB/s, %v IOPS each\n", in["volumeCount"], in["volumeGB"], in["writeMBps"], in["iops"])
-		bb, _ := est.Plan("backedblock")
-		line := usd(bb.Total) + "/month"
-		if gp3, ok := est.Plan("gp3"); ok {
-			line += " vs " + usd(gp3.Total) + " on EBS gp3"
-		}
-		fmt.Fprintf(w, "  estimate     %s\n               %s\n               %s\n", line, est.Note, est.CalculatorURL)
-		fmt.Fprintf(w, "\n%s\n", res.StorageClass)
 	}
 	fmt.Fprintf(w, "\nnext:\n")
 	for _, n := range res.Next {
@@ -330,7 +322,7 @@ func (a *app) configDeleteCmd() *cobra.Command {
 		Use:   "delete NAME",
 		Short: "Delete NAME.bbctl.yaml",
 		Long: `delete removes NAME.bbctl.yaml. It does not touch AWS: if the storage is
-deployed, run ` + "`bbctl destroy -s NAME`" + ` first, because destroy needs the config.
+deployed, run ` + "`bbctl destroy NAME`" + ` first, because destroy needs the config.
 The work dir, .bbctl/NAME, is kept: it holds the SSH key registered with EC2.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -495,12 +487,4 @@ func askYes(question string, def bool) bool {
 		return false
 	}
 	return def
-}
-
-func usd(v float64) string {
-	s := strconv.FormatInt(int64(v+0.5), 10)
-	for i := len(s) - 3; i > 0; i -= 3 {
-		s = s[:i] + "," + s[i:]
-	}
-	return "$" + s
 }

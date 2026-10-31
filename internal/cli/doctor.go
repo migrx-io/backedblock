@@ -115,7 +115,7 @@ func (a *app) runDoctor(ctx context.Context) []check {
 	if s, found, err := c.GetSecrets(ctx, cfg.SecretsSSMPath); err != nil {
 		add("node secret", "fail", err.Error(), "needs ssm:GetParameter and kms:Decrypt")
 	} else if !found {
-		add("node secret", "fail", cfg.SecretsSSMPath+" does not exist", "run `bbctl secrets generate`")
+		add("node secret", "warn", cfg.SecretsSSMPath+" does not exist yet", "apply creates it")
 	} else if miss := awsx.MissingSecrets(s); len(miss) > 0 {
 		add("node secret", "fail", "missing "+strings.Join(miss, ", "), "run `bbctl secrets set KEY=VALUE`")
 	} else {

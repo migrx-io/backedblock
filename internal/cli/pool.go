@@ -26,8 +26,9 @@ func (a *app) poolAddCmd() *cobra.Command {
 	var nodes int
 	var withMgmt bool
 	cmd := &cobra.Command{
-		Use:   "add NAME",
-		Short: "Add a pool to bbctl.yaml (then run bbctl apply)",
+		Use:         "add POOL",
+		Annotations: map[string]string{storageArgKey: storageBeforeOne},
+		Short:       "Add a pool to bbctl.yaml (then run bbctl apply)",
 		Long: `add appends a pool with the default sizing; edit bbctl.yaml to change it.
 
 Without a management plane each pool is independent: its own API endpoints,
@@ -116,8 +117,9 @@ nodes on the next apply; the CSI driver then points at the mgmt nodes.`,
 func (a *app) poolRemoveCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "remove NAME",
-		Short: "Destroy a pool and remove it from bbctl.yaml",
+		Use:         "remove POOL",
+		Annotations: map[string]string{storageArgKey: storageBeforeOne},
+		Short:       "Destroy a pool and remove it from bbctl.yaml",
 		Long: `remove destroys the pool's stack (nodes, cache disks AND its buckets with
 all volume data), removes it from bbctl.yaml, then re-applies mgmt so it
 forgets the pool.`,

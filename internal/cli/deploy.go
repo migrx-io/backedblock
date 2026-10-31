@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/migrx-io/backedblock/internal/awsx"
 	"github.com/migrx-io/backedblock/internal/deploy"
 	"github.com/migrx-io/backedblock/internal/tf"
 	"github.com/migrx-io/backedblock/internal/ui"
@@ -50,12 +52,13 @@ func (a *app) applyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Create or update the deployment",
-		Long: `apply checks the node secret, then plans and applies each stack in order:
-network, pools, mgmt. It asks before each stack with changes; --auto-approve
-skips the prompts (required without a TTY). Nothing is created before the
-first approval: on a first deploy the Terraform state bucket is listed in the
-network plan and created only once that plan is approved. Re-running is safe:
-stacks with no changes are skipped.`,
+		Long: `apply plans and applies each stack in order: network, pools, mgmt.
+
+It asks before each change; --auto-approve skips the prompts (required
+without a TTY). Nothing is created before an approval: a missing node secret
+is created once you approve it, and on a first deploy the Terraform state
+bucket is listed in the network plan and created once that plan is approved.
+Re-running is safe: stacks with no changes are skipped.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			d, err := a.open(ctx)
@@ -66,7 +69,7 @@ stacks with no changes are skipped.`,
 			if err != nil {
 				return err
 			}
-			if err := d.CheckSecrets(ctx); err != nil {
+			if err := ensureSecrets(ctx, d, yes); err != nil {
 				return err
 			}
 			if err := d.Prepare(ctx, deploy.BucketIfExists); err != nil {
@@ -201,4 +204,30 @@ or to run Terraform by hand. It needs no AWS access beyond config validation.`,
 			})
 		},
 	}
+}
+
+// ensureSecrets creates the node secret on a first apply, after asking like
+// any other resource. An existing secret is only checked, never replaced.
+func ensureSecrets(ctx context.Context, d *deploy.Deployment, yes bool) error {
+	path := d.Cfg.SecretsSSMPath
+	_, found, err := d.AWS.GetSecrets(ctx, path)
+	if err != nil {
+		return ui.Wrap(ui.ExitAWS, "", fmt.Errorf("read %s: %w", path, err))
+	}
+	if !found {
+		if !yes {
+			if err := ui.Confirm("Create the node secret "+path+" in SSM?", "--auto-approve"); err != nil {
+				return err
+			}
+		}
+		s, err := awsx.GenerateSecrets()
+		if err != nil {
+			return err
+		}
+		if err := d.AWS.PutSecrets(ctx, path, s); err != nil {
+			return ui.Wrap(ui.ExitAWS, "", err)
+		}
+		ui.Logf("created node secret %s", path)
+	}
+	return d.CheckSecrets(ctx)
 }
