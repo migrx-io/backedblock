@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
@@ -96,9 +95,9 @@ func (a *app) runInit(cmd *cobra.Command, o initOpts) error {
 		case res.ModulesRef != "":
 			mod = res.ModulesRef + " (" + mod + ")"
 		}
-		fmt.Fprintf(w, "%-18s %s\n", "COMPONENT", "VERSION")
-		fmt.Fprintf(w, "%-18s %s\n", "terraform", res.TerraformVersion)
-		fmt.Fprintf(w, "%-18s %s\n", "terraform-aws-mgx", mod)
+		ui.Table(w, []string{"COMPONENT", "VERSION"},
+			[]string{"terraform", res.TerraformVersion},
+			[]string{"terraform-aws-mgx", mod})
 	})
 }
 
