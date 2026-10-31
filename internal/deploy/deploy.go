@@ -20,9 +20,6 @@ import (
 	"github.com/migrx-io/backedblock/internal/ui"
 )
 
-// WorkDirName holds generated stacks and keys, next to bbctl.yaml.
-const WorkDirName = ".bbctl"
-
 type Deployment struct {
 	Cfg     *config.Config
 	AWS     *awsx.Client
@@ -63,7 +60,7 @@ func Open(ctx context.Context, cfg *config.Config, configPath, profile string) (
 	}
 	// Absolute: terraform runs inside each stack dir, so relative paths
 	// (plan files, module sources) would resolve against the wrong directory.
-	work, err := filepath.Abs(filepath.Join(filepath.Dir(configPath), WorkDirName))
+	work, err := filepath.Abs(config.WorkDir(configPath))
 	if err != nil {
 		return nil, err
 	}

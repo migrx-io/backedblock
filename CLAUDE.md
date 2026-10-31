@@ -1,7 +1,8 @@
 # CLAUDE.md
 
 This repo is `bbctl`, a single Go binary that deploys a backedblock.io storage
-cluster into a user's AWS account from one `bbctl.yaml`. It downloads a pinned
+cluster into a user's AWS account from one config per storage,
+`<name>.bbctl.yaml`. It downloads a pinned
 Terraform and the `migrx-io/terraform-aws-mgx` modules (as an HTTPS tarball,
 no git), talks to AWS through the SDK, and reaches nodes over SSM. The goal is
 that **AWS credentials are the only prerequisite**, for humans and for agents.
@@ -25,7 +26,16 @@ Stacks, in apply order: `network`, `pool/<name>`..., `mgmt` (mgmt discovers
 pools from SSM, so it comes last). Each stack has its own state key in the
 S3 state bucket and uses S3-native locking (`use_lockfile`, needs Terraform
 1.10 or later). Pools and mgmt read network outputs via `terraform_remote_state`.
-The generated stacks live in `.bbctl/stacks/` next to `bbctl.yaml` (git-ignored).
+The generated stacks live in `.bbctl/<name>/stacks/` next to the config
+(git-ignored). A plain `bbctl.yaml` keeps `.bbctl/` itself, because its SSH
+key is registered with EC2 and moving it would replace the key pair.
+`resolveConfig` picks the file: `--config`, `--storage`, or the only config in
+the directory. Several is an error, never a guess.
+
+`init` only downloads Terraform and the modules. `config create` does the AWS
+discovery, and sizes the pools by POSTing the workload to
+https://backedblock.io/api/estimate (`internal/estimate`). The site owns the
+model, so bbctl keeps no copy of the formula.
 
 ## Rules the code depends on
 
@@ -69,8 +79,9 @@ Each of these fixed a real bug or review finding. Keep them.
   closes, so `connect` must do nothing after it. The plugin module has no
   go.mod: its deps live in ours, and `github.com/twinj/uuid` is pinned to a
   pre-v1 pseudo-version that it needs. Don't bump it.
-- **The management plane is explicit.** It's only added by `init --mgmt` or
-  `pool add --with-mgmt`, never automatically. Several pools without mgmt is
+- **The management plane is explicit.** It's added by `config create` (asked
+  when the workload needs several pools; yes by default, `--mgmt=false` to
+  skip) or `pool add --with-mgmt`, never by other commands. Several pools without mgmt is
   a valid layout: independent pools, each with its own API and Grafana.
   `cross_peer_scrape` and the pools' Grafana follow whether `mgmt` exists.
 
@@ -92,11 +103,11 @@ AWS is smoke-tested by hand:
 
 ```bash
 go build -o $SCRATCH/bbctl ./cmd/bbctl
-cd $SCRATCH/smoke && $SCRATCH/bbctl init --region us-east-1 --name bbsmoke --force
+cd $SCRATCH/smoke && $SCRATCH/bbctl init && $SCRATCH/bbctl config create bbsmoke --region us-east-1 --force --json </dev/null
 $SCRATCH/bbctl doctor; $SCRATCH/bbctl plan --json; $SCRATCH/bbctl render
 # validate rendered stacks without a backend:
 TF=~/Library/Caches/bbctl/terraform/<ver>/terraform
-(cd .bbctl/stacks/network && $TF init -backend=false && $TF validate)
+(cd .bbctl/bbsmoke/stacks/network && $TF init -backend=false && $TF validate)
 ```
 
 `init`, `doctor`, `render` and `plan` are read-only in AWS. `apply`,
@@ -107,8 +118,9 @@ a declining approver or a failing S3 client, then delete it.
 
 Useful env vars: `BBCTL_TERRAFORM` (use a given binary), `BBCTL_CACHE_DIR`,
 `BBCTL_AMIS_URL` (read the published AMI list from elsewhere),
+`BBCTL_ESTIMATE_URL` (call another calculator, e.g. the site's `make dev`),
 `GITHUB_TOKEN` (raises the GitHub rate limit for module ref resolution). To
-develop against local modules, set `modules.path` in `bbctl.yaml` to a
+develop against local modules, set `modules.path` in the config to a
 checkout such as `../terraform-aws-mgx`.
 
 ## Related repos (siblings under ~/source/migrx)

@@ -214,19 +214,34 @@ go install github.com/migrx-io/backedblock/cmd/bbctl@latest
 ```
 
 ```bash
-bbctl init --region us-east-1     # finds VPC, AZs, free CIDRs, NAT subnet, node AMI → bbctl.yaml
+bbctl init                        # download Terraform and the modules
+bbctl config create prod          # region, VPC, workload → prod.bbctl.yaml
 bbctl secrets generate            # random node secrets → SSM SecureString
 bbctl doctor                      # check everything apply needs
 bbctl apply                       # state bucket, network, pools, mgmt, in order
 bbctl status --wait               # until every node has finished provisioning
 ```
 
-One `bbctl.yaml` describes the deployment. `init` writes one pool. Add more
-with `bbctl pool add pool2`, then `bbctl apply`:
+`config create` asks for the region, the VPC and the workload (volume count,
+size, throughput, IOPS). It sends the workload to the
+[cost calculator](https://backedblock.io/#calculator)'s API, which sizes the
+pools: instance type, node count, cache disks and cache sizes. It also prints
+the estimate and the StorageClass parameters. Every question has a flag (see
+`bbctl config create --help`). A flag that is given is not asked, and without
+a terminal nothing is asked.
+
+Each storage is one file, `NAME.bbctl.yaml`, and one deployment. Several can
+share a directory: commands pick one with `--storage NAME` (`-s`), or use the
+only one there. `bbctl config list` shows them.
+
+A workload too big for one pool gets several identical pools. Add more with
+`bbctl pool add pool2`, then `bbctl apply`:
 - **Without a management plane**, each pool is independent, with its own API
   endpoints and Grafana.
-- **`--with-mgmt`** adds a management plane (`init --mgmt` does it from the
-  start). It presents one API for every pool and federates their metrics.
+- **With one**, it presents one API for every pool and federates their
+  metrics. `config create` asks whether to add it when there are several
+  pools (`--mgmt` or `--mgmt=false` answers ahead), and `pool add --with-mgmt`
+  adds it later.
 
 Day-2 commands:
 
@@ -236,7 +251,7 @@ Day-2 commands:
 | `bbctl connect [--forward 3000]` | interactive shell or port forward (Grafana) via Session Manager, built in; no plugin to install |
 | `bbctl secrets get MGX_GW_ADMIN_PASSWD` | the `mgx-cli` admin password |
 | `bbctl plan` / `bbctl destroy` | preview, or tear down in reverse order |
-| `bbctl render` | write the generated Terraform to `.bbctl/stacks/` for review |
+| `bbctl render` | write the generated Terraform to `.bbctl/NAME/stacks/` for review |
 
 **Scripts and agents:** every command takes `--json`. The result goes to
 stdout, progress and Terraform logs go to stderr, and failures come back as
@@ -273,10 +288,10 @@ bbctl connect --node i-0123456789abcdef0 --forward 3000   # http://localhost:300
 ### Requirements
 
 - AWS credentials with EC2, IAM, VPC, S3, and SSM permissions
-- An existing VPC with a public subnet for the NAT gateway. `bbctl init` finds
-  both.
-- Access to the prebaked node AMI in your region. `bbctl init` picks the one
-  listed for your region in [Node AMIs](https://backedblock.io/docs/node-amis).
+- An existing VPC with a public subnet for the NAT gateway. `bbctl config
+  create` finds both.
+- Access to the prebaked node AMI in your region. `bbctl config create` picks
+  the one listed for your region in [Node AMIs](https://backedblock.io/docs/node-amis).
 
 To call the modules from your own Terraform instead, see
 [`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx). `bbctl render`

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/netip"
@@ -63,7 +64,17 @@ func (a *app) runDoctor(ctx context.Context) []check {
 
 	cfg, err := a.load()
 	if err != nil {
-		add("config", "fail", err.Error(), "run `bbctl init`")
+		detail, hint := err.Error(), "run `bbctl config create <name>`"
+		var ue *ui.Error
+		if errors.As(err, &ue) {
+			if len(ue.Details) > 0 {
+				detail += ": " + strings.Join(ue.Details, ", ")
+			}
+			if ue.Hint != "" {
+				hint = ue.Hint
+			}
+		}
+		add("config", "fail", detail, hint)
 		return cs
 	}
 	if errs := cfg.Validate(); len(errs) > 0 {
@@ -156,7 +167,7 @@ func checkVPC(ctx context.Context, c *awsx.Client, cfg *config.Config) (string, 
 		}
 	}
 	if len(clashes) > 0 {
-		return "vpc", "fail", strings.Join(clashes, "; "), "pick free CIDRs, or re-run `bbctl init --force` to discover them"
+		return "vpc", "fail", strings.Join(clashes, "; "), "pick free CIDRs, or re-run `bbctl config create <name> --force` to discover them"
 	}
 	if nat == nil {
 		return "vpc", "fail", cfg.Network.NATPublicSubnetID + " is not a subnet of " + cfg.Network.VPCID, "set network.nat_public_subnet_id to a public subnet in that VPC"

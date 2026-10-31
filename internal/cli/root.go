@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -21,6 +22,7 @@ var Version = "dev"
 
 type app struct {
 	configPath string
+	storage    string
 	profile    string
 }
 
@@ -30,9 +32,10 @@ func NewRoot() *cobra.Command {
 		Use:   "bbctl",
 		Short: "Deploy and operate backedblock.io storage clusters on AWS",
 		Long: `bbctl deploys a backedblock.io storage cluster into your AWS account from a
-single bbctl.yaml.
+storage config, NAME.bbctl.yaml.
 
-  bbctl init                 discover AWS values and write bbctl.yaml
+  bbctl init                 download Terraform and the modules
+  bbctl config create NAME   ask for the region, VPC and workload; write NAME.bbctl.yaml
   bbctl secrets generate     create the node secrets in SSM
   bbctl apply                create everything
   bbctl status               nodes and their health`,
@@ -44,13 +47,14 @@ single bbctl.yaml.
 		return ui.Wrap(ui.ExitUsage, "see `"+c.CommandPath()+" --help`", err)
 	})
 	pf := root.PersistentFlags()
-	pf.StringVarP(&a.configPath, "config", "c", config.DefaultFile, "path to bbctl.yaml")
+	pf.StringVarP(&a.storage, "storage", "s", "", "named storage: uses <name>.bbctl.yaml (default: the only one here)")
+	pf.StringVarP(&a.configPath, "config", "c", "", "path to a config file, instead of --storage")
 	pf.StringVar(&a.profile, "profile", "", "AWS shared config profile")
 	pf.BoolVar(&ui.JSON, "json", false, "print results as JSON on stdout")
 	pf.BoolVarP(&ui.Quiet, "quiet", "q", false, "no progress output on stderr")
 
 	root.AddCommand(
-		a.initCmd(), a.doctorCmd(), a.secretsCmd(),
+		a.initCmd(), a.configCmd(), a.doctorCmd(), a.secretsCmd(),
 		a.planCmd(), a.applyCmd(), a.destroyCmd(),
 		a.statusCmd(), a.execCmd(), a.connectCmd(),
 		a.poolCmd(), a.renderCmd(), versionCmd(),
@@ -58,10 +62,57 @@ single bbctl.yaml.
 	return root
 }
 
+// resolveConfig settles which config file a command works on: --config as
+// given, --storage's <name>.bbctl.yaml, else the only config in the directory
+// (a named storage or a plain bbctl.yaml). Several is an error, not a guess.
+func (a *app) resolveConfig() error {
+	switch {
+	case a.configPath != "" && a.storage != "":
+		return ui.Errf(ui.ExitUsage, "pass one of them", "--config and --storage both given")
+	case a.configPath != "":
+		return nil
+	case a.storage != "":
+		if !config.ValidName(a.storage) {
+			return ui.Errf(ui.ExitUsage, "see `bbctl config list`", "invalid storage name %q", a.storage)
+		}
+		a.configPath = config.StorageFile(".", a.storage)
+		return nil
+	}
+	names, err := config.Storages(".")
+	if err != nil {
+		return ui.Wrap(ui.ExitError, "", err)
+	}
+	files := make([]string, len(names))
+	for i, n := range names {
+		files[i] = config.StorageFile(".", n)
+	}
+	if _, err := os.Stat(config.DefaultFile); err == nil {
+		files = append(files, config.DefaultFile)
+	}
+	switch len(files) {
+	case 0:
+		a.configPath = config.DefaultFile // not found; load says how to create one
+		return nil
+	case 1:
+		a.configPath = files[0]
+		return nil
+	}
+	e := ui.Errf(ui.ExitUsage, "pass --storage <name> (or --config <file>)", "%d configs here; pick one", len(files))
+	e.Details = files
+	return e
+}
+
 func (a *app) load() (*config.Config, error) {
+	if err := a.resolveConfig(); err != nil {
+		return nil, err
+	}
 	c, err := config.Load(a.configPath)
 	if errors.Is(err, config.ErrNotFound) {
-		return nil, ui.Errf(ui.ExitUsage, "run `bbctl init` to create one, or pass --config", "%s not found", a.configPath)
+		hint := "run `bbctl config create <name>` to create one"
+		if a.storage != "" {
+			hint = "run `bbctl config create " + a.storage + "`, or see `bbctl config list`"
+		}
+		return nil, ui.Errf(ui.ExitUsage, hint, "%s not found", a.configPath)
 	}
 	if err != nil {
 		return nil, ui.Wrap(ui.ExitUsage, "", err)

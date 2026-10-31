@@ -96,6 +96,10 @@ func writeJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
+// stdin is shared by every prompt: a reader per prompt would buffer past its
+// line and drop the answers to the next questions when they are pasted at once.
+var stdin = bufio.NewReader(os.Stdin)
+
 // Interactive reports whether bbctl can prompt the user.
 func Interactive() bool {
 	return !JSON && term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stderr.Fd()))
@@ -108,7 +112,7 @@ func Confirm(question, flag string) error {
 		return Errf(ExitUsage, "re-run with "+flag+" to proceed without a prompt", "confirmation required: %s", question)
 	}
 	fmt.Fprintf(os.Stderr, "%s [y/N] ", question)
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, _ := stdin.ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(line)) {
 	case "y", "yes":
 		return nil
@@ -126,7 +130,7 @@ func Prompt(question, def string) string {
 	} else {
 		fmt.Fprintf(os.Stderr, "%s: ", question)
 	}
-	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, _ := stdin.ReadString('\n')
 	if line = strings.TrimSpace(line); line != "" {
 		return line
 	}
