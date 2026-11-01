@@ -39,7 +39,7 @@ storage config, NAME.bbctl.yaml.
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.CompletionOptions.HiddenDefaultCmd = true // `bbctl completion` works, unlisted
+	root.CompletionOptions.DisableDefaultCmd = true
 	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
 		return ui.Wrap(ui.ExitUsage, "see `"+c.CommandPath()+" --help`", err)
 	})
@@ -49,10 +49,10 @@ storage config, NAME.bbctl.yaml.
 
 	root.AddCommand(
 		a.initCmd(), a.configCmd(),
-		a.withConfig(a.doctorCmd(), true), a.withConfig(a.secretsCmd(), true),
+		a.withConfig(a.secretsCmd(), true),
 		a.withConfig(a.planCmd(), true), a.withConfig(a.applyCmd(), true), a.withConfig(a.destroyCmd(), true),
 		a.withConfig(a.statusCmd(), true), a.withConfig(a.execCmd(), true), a.withConfig(a.connectCmd(), true),
-		a.withConfig(a.poolCmd(), true), a.withConfig(a.renderCmd(), true), versionCmd(),
+		a.withConfig(a.poolCmd(), true), versionCmd(),
 	)
 	return root
 }

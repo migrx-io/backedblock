@@ -26,7 +26,6 @@ the human.
 bbctl init --json                            # downloads Terraform and the modules
 bbctl config create <name> --region <region> --volumes <n> --volume-size <gb> --json
                                              # writes <name>.bbctl.yaml; add --vpc if the region has several VPCs
-bbctl doctor <name> --json                   # every check must be "ok" or "warn"
 bbctl plan <name> --json                     # show the human the plan
 bbctl apply <name> --auto-approve --json     # 10-20 min; creates the node secret if missing
 bbctl status <name> --wait --json            # until every node reports provision "Success"

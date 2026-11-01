@@ -110,9 +110,9 @@ func (a *app) poolRemoveCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "remove POOL",
-		Short: "Destroy a pool and remove it from bbctl.yaml",
+		Short: "Destroy a pool and remove it from NAME.bbctl.yaml",
 		Long: `remove destroys the pool's stack (nodes, cache disks AND its buckets with
-all volume data), removes it from bbctl.yaml, then re-applies mgmt so it
+all volume data), removes it from NAME.bbctl.yaml, then re-applies mgmt so it
 forgets the pool.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -183,7 +183,7 @@ forgets the pool.`,
 func (a *app) poolListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List pools in bbctl.yaml",
+		Short: "List pools in NAME.bbctl.yaml",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, err := a.load()
 			if err != nil {

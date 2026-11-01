@@ -163,39 +163,6 @@ func nonNilResults(r []deploy.StackResult) []deploy.StackResult {
 	return r
 }
 
-func (a *app) renderCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:    "render",
-		Short:  "Write the Terraform stacks to .bbctl/<name>/stacks without running them",
-		Hidden: true, // runs, but kept out of the command list
-		Long: `render resolves the modules and writes each stack's main.tf.json, for review
-or to run Terraform by hand. It needs no AWS access beyond config validation.`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx := cmd.Context()
-			d, err := a.open(ctx)
-			if err != nil {
-				return err
-			}
-			if err := d.Render(ctx); err != nil {
-				return err
-			}
-			type stack struct {
-				ID  string `json:"id"`
-				Dir string `json:"dir"`
-			}
-			var out []stack
-			for _, s := range d.Stacks {
-				out = append(out, stack{s.ID, s.Dir})
-			}
-			return ui.Result(map[string]any{"modules": d.ModulesSHA(), "stacks": out}, func(w io.Writer) {
-				for _, s := range out {
-					fmt.Fprintf(w, "%-16s %s\n", s.ID, s.Dir)
-				}
-			})
-		},
-	}
-}
-
 // ensureSecrets creates the node secret on a first apply, after asking like
 // any other resource. An existing secret is only checked, never replaced.
 func ensureSecrets(ctx context.Context, d *deploy.Deployment, yes bool) error {

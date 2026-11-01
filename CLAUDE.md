@@ -13,7 +13,7 @@ How the tool is used (the agent-facing contract): @AGENTS.md
 
 ```
 cmd/bbctl/main.go       entry point; maps errors to exit codes
-internal/cli/           cobra commands (one file per area: init, doctor, secrets, deploy, nodes, pool)
+internal/cli/           cobra commands (one file per area: init, config, secrets, deploy, nodes, pool)
 internal/config/        bbctl.yaml schema, Validate(), defaults, atomic Save/Stage
 internal/render/        config -> one Terraform root per state (main.tf.json), WriteLocal for previews
 internal/deploy/        orchestration: Prepare, Plan, Apply, Destroy, Status
@@ -109,13 +109,13 @@ AWS is smoke-tested by hand:
 ```bash
 go build -o $SCRATCH/bbctl ./cmd/bbctl
 cd $SCRATCH/smoke && $SCRATCH/bbctl init && $SCRATCH/bbctl config create bbsmoke --region us-east-1 --force --json </dev/null
-$SCRATCH/bbctl doctor bbsmoke; $SCRATCH/bbctl plan bbsmoke --json; $SCRATCH/bbctl render bbsmoke
-# validate rendered stacks without a backend:
+$SCRATCH/bbctl plan bbsmoke --json
+# plan writes the stacks; validate them without a backend:
 TF=~/Library/Caches/bbctl/terraform/<ver>/terraform
 (cd .bbctl/bbsmoke/stacks/network && $TF init -backend=false && $TF validate)
 ```
 
-`init`, `doctor`, `render` and `plan` are read-only in AWS. `apply`,
+`init`, `config create`, `plan` and `status` are read-only in AWS. `apply`,
 `destroy`, `secrets generate|set` and `pool remove` change the account and
 cost money. **Ask the user before running them.** To exercise one of those
 paths without creating anything, write a throwaway `_test.go` that swaps in
@@ -134,7 +134,7 @@ checkout such as `../terraform-aws-mgx`.
   variable changes, update `render.go` and `config.go` together.
 - `mgx-packer`: builds the node AMIs. Names are
   `mgx-storage-ubuntu<ver>-<arch>-<ts>`. bbctl doesn't search EC2 for them:
-  `init` and `doctor` read https://backedblock.io/amis.json, which
+  `config create` reads https://backedblock.io/amis.json, which
   `make update-amis` in `backedblock.io` writes along with the docs table.
 - `backedblock.io`: the website and docs.
 - `mgx-csi-driver`: the Kubernetes half of the install.

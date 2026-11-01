@@ -243,15 +243,21 @@ A workload too big for one pool gets several identical pools. Add more with
   pools (`--mgmt` or `--mgmt=false` answers ahead), and `pool add --with-mgmt`
   adds it later.
 
-Day-2 commands:
+Commands:
 
 | Command | What it does |
 |---|---|
-| `bbctl exec NAME [--all] -- CMD` | run a shell command on nodes via SSM Run Command and return its output and exit code; no SSH and no terminal |
-| `bbctl connect NAME [--forward 3000]` | interactive shell or port forward (Grafana) via Session Manager, built in; no plugin to install |
-| `bbctl secrets get NAME MGX_GW_ADMIN_PASSWD` | the `mgx-cli` admin password |
-| `bbctl plan NAME` / `bbctl destroy NAME` | preview, or tear down in reverse order |
-| `bbctl render NAME` | write the generated Terraform to `.bbctl/NAME/stacks/` for review |
+| `bbctl init` | download Terraform and the modules |
+| `bbctl config create\|list\|delete` | create, list or delete storage configs |
+| `bbctl plan NAME` | preview what `apply` would change |
+| `bbctl apply NAME` | create or update the deployment |
+| `bbctl destroy NAME` | tear it down in reverse order (mgmt, pools, network) |
+| `bbctl status NAME [--wait]` | each stack's outputs and its nodes' EC2, SSM and provisioning state |
+| `bbctl pool add\|list\|remove NAME` | manage the pools in a config |
+| `bbctl exec NAME [--all] -- CMD` | run a shell command on nodes via SSM Run Command; returns its output and exit code |
+| `bbctl connect NAME [--forward [LOCAL:]REMOTE]` | interactive shell or port forward via Session Manager, built in |
+| `bbctl secrets get\|list\|set\|generate NAME` | the node secrets in SSM, e.g. `get NAME MGX_GW_ADMIN_PASSWD` for `mgx-cli` |
+| `bbctl version` | bbctl, Terraform and module versions |
 
 **Scripts and agents:** every command takes `--json`. The result goes to
 stdout, progress and Terraform logs go to stderr with `-v`, and failures come back as
@@ -294,8 +300,7 @@ bbctl connect prod --node i-0123456789abcdef0 --forward 3000   # http://localhos
   the one listed for your region in [Node AMIs](https://backedblock.io/docs/node-amis).
 
 To call the modules from your own Terraform instead, see
-[`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx). `bbctl render prod`
-writes the exact stacks bbctl runs, if you want a working starting point.
+[`terraform-aws-mgx`](https://github.com/migrx-io/terraform-aws-mgx).
 
 ---
 

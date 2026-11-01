@@ -86,7 +86,7 @@ func (d *Deployment) Prepare(ctx context.Context, mode BucketMode) error {
 	d.noState = !exists
 
 	if d.terraform, err = tf.EnsureTerraform(ctx, d.Cfg.Terraform.Path, d.Cfg.Terraform.Version); err != nil {
-		return ui.Wrap(ui.ExitError, "set terraform.path in bbctl.yaml to use an existing binary", err)
+		return ui.Wrap(ui.ExitError, "set terraform.path in "+d.Cfg.Name+".bbctl.yaml to use an existing binary", err)
 	}
 	return d.Render(ctx)
 }
