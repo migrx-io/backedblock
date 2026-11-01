@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bbctl ui</title>
+<link rel="stylesheet" href="vendor/uplot/uPlot.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">backedblock.io <span class="sep">/</span> <span id="deployment">…</span></div>
+  <div class="meta" id="meta"></div>
+  <div class="right">
+    <span class="updated" id="updated"></span>
+    <button class="ghost" id="logout" hidden>Log out</button>
+  </div>
+</header>
+
+<main>
+  <section id="login-view" class="login" hidden>
+    <form id="login-form" class="card login-card">
+      <h1>Log in to <span id="login-cluster">the cluster</span></h1>
+      <label>User <input name="username" autocomplete="username" value="admin" required></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password" required autofocus></label>
+      <p class="error" id="login-error" role="alert"></p>
+      <button type="submit">Log in</button>
+      <p class="hint">The admin password: <code id="login-hint">bbctl secrets get NAME MGX_GW_ADMIN_PASSWD</code></p>
+    </form>
+  </section>
+
+  <section id="main-view" hidden>
+    <div class="warnings" id="warnings" role="status"></div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Nodes</h2>
+        <span class="sub" id="cluster-line"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="nodes">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Node</th>
+              <th>Cluster</th>
+              <th>Core</th>
+              <th>Cache</th>
+              <th>Storage</th>
+              <th class="num">CPU</th>
+              <th class="num">RAM</th>
+              <th>Instance</th>
+              <th>EC2</th>
+              <th>SSM</th>
+              <th>Provisioning</th>
+            </tr>
+          </thead>
+          <tbody id="nodes"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="filters" id="filters">
+      <span class="label">Range</span>
+      <div class="seg" role="radiogroup" aria-label="Time range">
+        <button role="radio" data-range="900">15m</button>
+        <button role="radio" data-range="3600" aria-checked="true">1h</button>
+        <button role="radio" data-range="21600">6h</button>
+        <button role="radio" data-range="86400">24h</button>
+      </div>
+    </div>
+
+    <div class="charts" id="charts">
+      <div class="card chart-card">
+        <div class="card-head"><h2>CPU usage</h2><span class="sub">% per node</span></div>
+        <div class="chart" id="chart-cpu"></div>
+      </div>
+      <div class="card chart-card">
+        <div class="card-head"><h2>RAM usage</h2><span class="sub">% per node</span></div>
+        <div class="chart" id="chart-ram"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="vendor/uplot/uPlot.iife.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

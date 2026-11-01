@@ -19,7 +19,8 @@ internal/render/        config -> one Terraform root per state (main.tf.json), W
 internal/deploy/        orchestration: Prepare, Plan, Apply, Destroy, Status
 internal/tf/            terraform install (hc-install), module fetch, tfexec runner
 internal/awsx/          SDK calls: discovery, state bucket, secrets, SSM exec/session
-internal/ui/            output contract: Result, Errf/Wrap, Confirm, exit codes
+internal/ui/            output contract: Result, Errf/Wrap, Confirm, exit codes, status line
+internal/dash/          `bbctl ui`: local web server, gateway and Prometheus clients, embedded page (web/, uPlot vendored)
 ```
 
 Stacks, in apply order: `network`, `pool/<name>`..., `mgmt` (mgmt discovers
@@ -84,6 +85,11 @@ Each of these fixed a real bug or review finding. Keep them.
   closes, so `connect` must do nothing after it. The plugin module has no
   go.mod: its deps live in ours, and `github.com/twinj/uuid` is pinned to a
   pre-v1 pseudo-version that it needs. Don't bump it.
+- **`bbctl ui` forwards through child processes.** The Session Manager code
+  ends its process when a session closes, so each port forward (gateway
+  :8082, Prometheus :9090) runs as a child `bbctl connect --forward`, restarted
+  if it drops. The gateway wants `Authorization: JWT <token>`
+  (MGX_GW_JWT_HEADER), not Bearer. The page sends chart names, never PromQL.
 - **The management plane is explicit.** It's added by `config create` (asked
   when the workload needs several pools; yes by default, `--mgmt=false` to
   skip) or `pool add --with-mgmt`, never by other commands. Several pools without mgmt is

@@ -1,0 +1,244 @@
+package dash
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+// errUnauthorized means the gateway rejected the token: log in again.
+var errUnauthorized = errors.New("not logged in")
+
+// gateway is the cluster's management API (mgx-gateway-api on :8082).
+type gateway struct {
+	addr    string // host:port
+	cluster string
+
+	mu     sync.Mutex
+	scheme string // detected on first use; the gateway serves HTTPS only when it has a certificate
+}
+
+var (
+	plainClient = &http.Client{Timeout: 20 * time.Second}
+	// The gateway's certificate is self-signed, and the connection is to the
+	// local end of an SSM tunnel, which is already encrypted.
+	tlsClient = &http.Client{Timeout: 20 * time.Second, Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // see above
+	}}
+)
+
+// do sends a request, trying HTTP and then HTTPS until one gets a response.
+func (g *gateway) do(ctx context.Context, method, path, token string, body any) (*http.Response, error) {
+	var raw []byte
+	if body != nil {
+		var err error
+		if raw, err = json.Marshal(body); err != nil {
+			return nil, err
+		}
+	}
+	g.mu.Lock()
+	schemes := []string{g.scheme}
+	if g.scheme == "" {
+		schemes = []string{"http", "https"}
+	}
+	g.mu.Unlock()
+	var lastErr error
+	for _, s := range schemes {
+		req, err := http.NewRequestWithContext(ctx, method, s+"://"+g.addr+path, bytes.NewReader(raw))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			// The gateway's JWT_HEADER_TYPE (MGX_GW_JWT_HEADER) defaults to "JWT",
+			// which is what mgx-cli sends.
+			req.Header.Set("Authorization", "JWT "+token)
+		}
+		c := plainClient
+		if s == "https" {
+			c = tlsClient
+		}
+		resp, err := c.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		g.mu.Lock()
+		g.scheme = s
+		g.mu.Unlock()
+		return resp, nil
+	}
+	return nil, fmt.Errorf("cluster API: %w", lastErr)
+}
+
+// login returns a gateway access token for the user.
+func (g *gateway) login(ctx context.Context, user, password string) (string, error) {
+	resp, err := g.do(ctx, http.MethodPost, "/api/v1/auth", "", map[string]string{
+		"cluster": g.cluster, "ns": g.cluster, "username": user, "password": password,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		AccessToken string `json:"access_token"`
+		Error       any    `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	switch {
+	case resp.StatusCode == http.StatusAccepted:
+		return "", errors.New("this account uses two-factor login, which the dashboard does not support yet")
+	case resp.StatusCode != http.StatusOK || out.AccessToken == "":
+		if out.Error != nil {
+			return "", fmt.Errorf("login failed: %v", out.Error)
+		}
+		return "", fmt.Errorf("login failed: %s", resp.Status)
+	}
+	return out.AccessToken, nil
+}
+
+// get decodes a GET of path into v.
+func (g *gateway) get(ctx context.Context, token, path string, v any) error {
+	resp, err := g.do(ctx, http.MethodGet, path, token, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	// flask-jwt-extended answers 401 for a missing or expired token and 422
+	// for a malformed one.
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusUnprocessableEntity {
+		return errUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("cluster API %s: %s %s", path, resp.Status, strings.TrimSpace(string(b)))
+	}
+	return json.NewDecoder(resp.Body).Decode(v)
+}
+
+// clusterInfo is one entry of GET /api/v1/cluster.
+type clusterInfo struct {
+	Cluster string `json:"cluster"`
+	VIPHost struct {
+		UUID string `json:"uuid"`
+		IP   string `json:"ip"`
+		VIP  string `json:"vip"`
+	} `json:"vip_host"`
+}
+
+// clusterNode is one entry of GET /api/v1/cluster/<cluster>/nodes.
+type clusterNode struct {
+	UUID     string `json:"uuid"`
+	IP       string `json:"ip"`
+	Hostname string `json:"hostname"`
+	Status   string `json:"status"` // UP or DOWN
+}
+
+// prometheus is the read-only query API of a node's Prometheus (:9090).
+type prometheus struct {
+	base string // http://host:port
+}
+
+type sample struct {
+	Labels map[string]string
+	Value  float64
+}
+
+type series struct {
+	Labels map[string]string
+	Points [][2]float64 // unix seconds, value
+}
+
+func (p *prometheus) api(ctx context.Context, path string, q url.Values, data any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.base+path+"?"+q.Encode(), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := plainClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("prometheus: %w", err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Status string          `json:"status"`
+		Error  string          `json:"error"`
+		Data   json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return fmt.Errorf("prometheus: %s", resp.Status)
+	}
+	if out.Status != "success" {
+		return fmt.Errorf("prometheus: %s", out.Error)
+	}
+	return json.Unmarshal(out.Data, data)
+}
+
+func parseValue(v [2]any) (float64, float64, bool) {
+	t, ok := v[0].(float64)
+	s, ok2 := v[1].(string)
+	if !ok || !ok2 {
+		return 0, 0, false
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	return t, f, err == nil
+}
+
+// query evaluates an instant vector expression.
+func (p *prometheus) query(ctx context.Context, expr string) ([]sample, error) {
+	var d struct {
+		Result []struct {
+			Metric map[string]string `json:"metric"`
+			Value  [2]any            `json:"value"`
+		} `json:"result"`
+	}
+	if err := p.api(ctx, "/api/v1/query", url.Values{"query": {expr}}, &d); err != nil {
+		return nil, err
+	}
+	out := make([]sample, 0, len(d.Result))
+	for _, r := range d.Result {
+		if _, v, ok := parseValue(r.Value); ok {
+			out = append(out, sample{r.Metric, v})
+		}
+	}
+	return out, nil
+}
+
+// queryRange evaluates expr over [start, end] every step.
+func (p *prometheus) queryRange(ctx context.Context, expr string, start, end time.Time, step time.Duration) ([]series, error) {
+	var d struct {
+		Result []struct {
+			Metric map[string]string `json:"metric"`
+			Values [][2]any          `json:"values"`
+		} `json:"result"`
+	}
+	q := url.Values{
+		"query": {expr},
+		"start": {strconv.FormatInt(start.Unix(), 10)},
+		"end":   {strconv.FormatInt(end.Unix(), 10)},
+		"step":  {strconv.Itoa(int(step.Seconds()))},
+	}
+	if err := p.api(ctx, "/api/v1/query_range", q, &d); err != nil {
+		return nil, err
+	}
+	out := make([]series, 0, len(d.Result))
+	for _, r := range d.Result {
+		s := series{Labels: r.Metric}
+		for _, v := range r.Values {
+			if t, f, ok := parseValue(v); ok {
+				s.Points = append(s.Points, [2]float64{t, f})
+			}
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}

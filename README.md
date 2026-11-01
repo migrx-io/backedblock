@@ -256,6 +256,7 @@ Commands:
 | `bbctl pool add\|remove NAME POOL`, `bbctl pool list NAME` | add, remove or list the pools in a config |
 | `bbctl exec NAME [--all] -- CMD` | run a shell command on nodes via SSM Run Command; returns its output and exit code |
 | `bbctl connect NAME [--forward [LOCAL:]REMOTE]` | interactive shell or port forward via Session Manager, built in |
+| `bbctl ui NAME [--pool POOL]` | a dashboard of the pool's cluster in the browser: nodes, their health, CPU and RAM |
 | `bbctl secrets get\|list\|set\|generate NAME` | the node secrets in SSM, e.g. `get NAME MGX_GW_ADMIN_PASSWD` for `mgx-cli` |
 | `bbctl version` | bbctl, Terraform and module versions |
 
