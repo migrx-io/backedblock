@@ -29,8 +29,7 @@ func NewRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "bbctl",
 		Short: "Deploy and operate backedblock.io storage clusters on AWS",
-		Long: `bbctl deploys a backedblock.io storage cluster into your AWS account from a
-storage config, NAME.bbctl.yaml.
+		Long: `bbctl helps you to deploy and manage backedblock.io storage cluster
 
   bbctl init                 download Terraform and the modules
   bbctl config create NAME   generate NAME.bbctl.yaml
