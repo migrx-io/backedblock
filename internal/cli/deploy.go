@@ -143,6 +143,13 @@ func printResults(res []deploy.StackResult) error {
 				line += " — " + r.Reason
 			}
 			fmt.Fprintln(w, line)
+			// A plan is for review: show what it changes. Apply's resources were
+			// already shown in its approval.
+			if r.Status == "planned" && r.Plan != nil {
+				for _, c := range r.Plan.Changes {
+					fmt.Fprintf(w, "  %-8s %s\n", c.Action, c.Address)
+				}
+			}
 		}
 	})
 }
