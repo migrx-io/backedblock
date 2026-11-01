@@ -23,7 +23,7 @@ import (
 func (a *app) configCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Create, list and delete storage configs",
+		Short: "create, list and delete storage configs",
 	}
 	cmd.AddCommand(a.withProfile(a.configCreateCmd()), a.configListCmd(), a.configDeleteCmd())
 	return cmd
@@ -46,7 +46,7 @@ func (a *app) configCreateCmd() *cobra.Command {
 	o := configOpts{}
 	cmd := &cobra.Command{
 		Use:   "create NAME",
-		Short: "Write NAME.bbctl.yaml",
+		Short: "write NAME.bbctl.yaml",
 		Long: `Create the configuration for a storage cluster, NAME.bbctl.yaml. It creates
 nothing in AWS: run ` + "`bbctl apply NAME`" + ` to create the resources.
 Pools are sized by the calculator: https://backedblock.io/docs/sizing`,
@@ -321,8 +321,8 @@ func (a *app) configDeleteCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "delete NAME",
-		Short: "Delete NAME.bbctl.yaml",
-		Long: `delete removes NAME.bbctl.yaml. It does not touch AWS: if the storage is
+		Short: "delete NAME.bbctl.yaml",
+		Long: `Delete removes NAME.bbctl.yaml. It does not touch AWS: if the storage is
 deployed, run ` + "`bbctl destroy NAME`" + ` first, because destroy needs the config.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -353,7 +353,7 @@ deployed, run ` + "`bbctl destroy NAME`" + ` first, because destroy needs the co
 func (a *app) configListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List the storage configs in this directory",
+		Short: "list the storage configs in this directory",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			type entry struct {
 				Storage string `json:"storage"`

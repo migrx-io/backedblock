@@ -57,13 +57,13 @@ Edit `<name>.bbctl.yaml`, then run `plan` and `apply`. Module variables that hav
 no dedicated field go under a pool's `extra:` map, for example
 `cache_filesystem: xfs` or `scheduler_node_down_wait: 120`.
 
-- Add a pool: `bbctl pool add <name> [--az <az>]`, then `apply`. Without a
+- Add a pool: `bbctl pool add <name> <pool> [--az <az>]`, then `apply`. Without a
   management plane each pool is independent, with its own API endpoints and
   Grafana. `--with-mgmt` adds a management plane in front of all pools; after
   that apply, the CSI driver points at the mgmt nodes.
-- Remove a pool: `bbctl pool remove <name> --auto-approve`. This **deletes its buckets
+- Remove a pool: `bbctl pool remove <name> <pool> --auto-approve`. This **deletes its buckets
   and data**.
-- Limit to one stack: `--stack network|pool/<name>|mgmt`.
+- Limit to one stack: `--stack network|pool/<pool>|mgmt`.
 
 ## Operate
 

@@ -22,13 +22,9 @@ func (a *app) statusCmd() *cobra.Command {
 	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show each stack's outputs and its nodes' EC2, SSM and provisioning state",
-		Long: `status lists every stack, its outputs, and for each node its EC2 state, its
-SSM agent status and the status of its provisioning run (setup-node.sh).
-
-apply returns as soon as the provisioning run is created; the nodes configure
-themselves afterwards. --wait polls until every node of every applied stack
-reports provision=Success, and fails as soon as one reports Failed.`,
+		Short: "show each stack's outputs and its nodes' EC2, SSM and provisioning state",
+		Long: `Status lists every stack, its outputs, and for each node its EC2 state, its
+SSM agent status and the status of its provisioning run.`,
 		Example: `  bbctl status prod
   bbctl apply prod --auto-approve && bbctl status prod --wait --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -247,12 +243,9 @@ func (a *app) execCmd() *cobra.Command {
 	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "exec -- COMMAND...",
-		Short: "Run a shell command on nodes through SSM (non-interactive)",
-		Long: `exec runs a command as root on one node (default) or every node of a stack
-(--all) through SSM Run Command and returns its exit code and output. It needs
-no SSH or bastion and no terminal, which makes it the way for scripts
-and agents to operate the cluster. Exit code is 1 if the command failed on
-any node.`,
+		Short: "run a shell command on nodes through SSM (non-interactive)",
+		Long: `Exec runs a command as root on one node (default) or every node of a stack
+(--all) through SSM Run Command and returns its exit code and output.`,
 		Example: `  bbctl exec prod -- uptime
   bbctl exec prod --all --json -- 'df -h /'
   bbctl exec prod --mgmt --node 0 -- journalctl -n 50 --no-pager`,
@@ -309,8 +302,8 @@ func (a *app) connectCmd() *cobra.Command {
 	var forward string
 	cmd := &cobra.Command{
 		Use:   "connect",
-		Short: "Open a shell on a node, or forward a port from it, over SSM",
-		Long: `connect starts an interactive Session Manager shell on a node, or with
+		Short: "open a shell on a node, or forward a port from it, over SSM",
+		Long: `Connect starts an interactive Session Manager shell on a node, or with
 --forward a local port forward.`,
 		Example: `  bbctl connect prod
   bbctl connect prod --pool pool2 --node 1

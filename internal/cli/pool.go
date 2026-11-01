@@ -15,7 +15,7 @@ import (
 func (a *app) poolCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "pool",
-		Short: "Add, list or remove the storage pools in a config",
+		Short: "add, list or remove the storage pools in a config",
 	}
 	cmd.AddCommand(a.poolAddCmd(), a.poolRemoveCmd(), a.poolListCmd())
 	return cmd
@@ -27,8 +27,8 @@ func (a *app) poolAddCmd() *cobra.Command {
 	var withMgmt bool
 	cmd := &cobra.Command{
 		Use:   "add POOL",
-		Short: "Add a pool to NAME.bbctl.yaml (then run bbctl apply NAME)",
-		Long:  `add appends a pool with the default sizing.`,
+		Short: "add a pool to NAME.bbctl.yaml (then run bbctl apply NAME)",
+		Long:  `Add appends a pool with the default sizing.`,
 		Example: `  bbctl pool add prod pool2 --az us-east-1b                     # an independent pool
   bbctl pool add prod pool2 --with-mgmt && bbctl apply prod   # pools behind a management plane`,
 		Args: cobra.ExactArgs(1),
@@ -110,8 +110,8 @@ func (a *app) poolRemoveCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "remove POOL",
-		Short: "Destroy a pool and remove it from NAME.bbctl.yaml",
-		Long: `remove destroys the pool's stack (nodes, cache disks AND its buckets with
+		Short: "destroy a pool and remove it from NAME.bbctl.yaml",
+		Long: `Remove destroys the pool's stack (nodes, cache disks AND its buckets with
 all volume data), removes it from NAME.bbctl.yaml, then re-applies mgmt so it
 forgets the pool.`,
 		Args: cobra.ExactArgs(1),
@@ -183,7 +183,7 @@ forgets the pool.`,
 func (a *app) poolListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List pools in NAME.bbctl.yaml",
+		Short: "list pools in NAME.bbctl.yaml",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, err := a.load()
 			if err != nil {

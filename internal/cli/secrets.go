@@ -15,7 +15,7 @@ import (
 func (a *app) secretsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secrets",
-		Short: "Manage the node secrets stored in SSM Parameter Store",
+		Short: "manage the node secrets stored in SSM Parameter Store",
 		Long: `Node secrets live in SSM SecureString at secrets_ssm_path. Nodes fetch it
 while provisioning.`,
 	}
@@ -27,8 +27,8 @@ func (a *app) secretsGenerateCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "generate",
-		Short: "Create the node secret with random values",
-		Long: `generate writes random values for every key. If the secret already exists it
+		Short: "create the node secret with random values",
+		Long: `Generate writes random values for every key. If the secret already exists it
 is left alone (exit 0, status "exists") unless --force is given. Rotating with
 --force on a running cluster does not update nodes already provisioned.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -75,7 +75,7 @@ is left alone (exit 0, status "exists") unless --force is given. Rotating with
 func (a *app) secretsSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "set KEY=VALUE...",
-		Short:   "Set individual keys, keeping the others",
+		Short:   "set individual keys, keeping the others",
 		Example: "  bbctl secrets set prod MGX_GW_ADMIN_PASSWD=s3cret",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -115,7 +115,7 @@ func (a *app) secretsSetCmd() *cobra.Command {
 func (a *app) secretsGetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "get KEY",
-		Short:   "Print one secret value (e.g. the admin password for mgx-cli)",
+		Short:   "print one secret value (e.g. the admin password for mgx-cli)",
 		Example: "  bbctl secrets get prod MGX_GW_ADMIN_PASSWD",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -146,7 +146,7 @@ func (a *app) secretsGetCmd() *cobra.Command {
 func (a *app) secretsListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List keys in the secret (values are not printed)",
+		Short: "list keys in the secret (values are not printed)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := a.load()
 			if err != nil {

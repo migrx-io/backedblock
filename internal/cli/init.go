@@ -19,7 +19,7 @@ func (a *app) initCmd() *cobra.Command {
 	o := initOpts{}
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Download Terraform and the deployment modules",
+		Short: "download Terraform and the deployment modules",
 		Example: `  bbctl init
   bbctl init --modules-ref v0.4.0`,
 		RunE: func(cmd *cobra.Command, _ []string) error {

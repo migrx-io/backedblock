@@ -28,13 +28,13 @@ func NewRoot() *cobra.Command {
 	a := &app{}
 	root := &cobra.Command{
 		Use:   "bbctl",
-		Short: "Deploy and operate backedblock.io storage clusters on AWS",
+		Short: "deploy and operate backedblock.io storage clusters on AWS",
 		Long: `bbctl helps you to deploy and manage backedblock.io storage cluster
 
   bbctl init                 download Terraform and the modules
   bbctl config create NAME   generate NAME.bbctl.yaml
-  bbctl apply                create everything
-  bbctl status               nodes and their health`,
+  bbctl apply NAME           create everything
+  bbctl status NAME          nodes and their health`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -53,6 +53,13 @@ func NewRoot() *cobra.Command {
 		a.withConfig(a.statusCmd(), true), a.withConfig(a.execCmd(), true), a.withConfig(a.connectCmd(), true),
 		a.withConfig(a.poolCmd(), true), versionCmd(),
 	)
+	root.InitDefaultHelpCmd() // lowercase, like every other command's Short
+	for _, c := range root.Commands() {
+		if c.Name() == "help" {
+			c.Short = "help about any command"
+		}
+	}
+	describe(root)
 	return root
 }
 
@@ -135,7 +142,7 @@ func (a *app) open(ctx context.Context) (*deploy.Deployment, error) {
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print bbctl and pinned tool versions",
+		Short: "print bbctl and pinned tool versions",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ref := config.DefaultModulesRef
 			sha := tf.CachedModulesSHA(ref)
@@ -174,4 +181,16 @@ func stackSet(d *deploy.Deployment, ids []string) (map[string]bool, error) {
 		set[id] = true
 	}
 	return set, nil
+}
+
+// describe gives every command without a Long its Short as a sentence:
+// command lists show the Short in lowercase, a command's own help starts
+// with a capital.
+func describe(c *cobra.Command) {
+	if c.Long == "" && c.Short != "" {
+		c.Long = strings.ToUpper(c.Short[:1]) + c.Short[1:] + "."
+	}
+	for _, sub := range c.Commands() {
+		describe(sub)
+	}
 }

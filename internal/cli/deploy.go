@@ -18,8 +18,8 @@ func (a *app) planCmd() *cobra.Command {
 	var stacks []string
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Show what apply would change, without changing anything",
-		Long:  `plan renders the stacks and runs terraform plan on each.`,
+		Short: "show what apply would change, without changing anything",
+		Long:  `Plan renders the stacks and runs terraform plan on each.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			d, err := a.open(ctx)
@@ -49,8 +49,8 @@ func (a *app) applyCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "apply",
-		Short: "Create or update the deployment",
-		Long:  `apply plans and applies each stack in order: network, pools, mgmt.`,
+		Short: "create or update the deployment",
+		Long:  `Apply plans and applies each stack in order: network, pools, mgmt.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			d, err := a.open(ctx)
@@ -85,8 +85,8 @@ func (a *app) destroyCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "destroy",
-		Short: "Destroy the deployment (mgmt, pools, then network)",
-		Long:  `destroy tears stacks down in reverse order.`,
+		Short: "destroy the deployment (mgmt, pools, then network)",
+		Long:  `Destroy tears stacks down in reverse order.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			d, err := a.open(ctx)

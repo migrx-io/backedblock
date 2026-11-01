@@ -253,7 +253,7 @@ Commands:
 | `bbctl apply NAME` | create or update the deployment |
 | `bbctl destroy NAME` | tear it down in reverse order (mgmt, pools, network) |
 | `bbctl status NAME [--wait]` | each stack's outputs and its nodes' EC2, SSM and provisioning state |
-| `bbctl pool add\|list\|remove NAME` | manage the pools in a config |
+| `bbctl pool add\|remove NAME POOL`, `bbctl pool list NAME` | add, remove or list the pools in a config |
 | `bbctl exec NAME [--all] -- CMD` | run a shell command on nodes via SSM Run Command; returns its output and exit code |
 | `bbctl connect NAME [--forward [LOCAL:]REMOTE]` | interactive shell or port forward via Session Manager, built in |
 | `bbctl secrets get\|list\|set\|generate NAME` | the node secrets in SSM, e.g. `get NAME MGX_GW_ADMIN_PASSWD` for `mgx-cli` |
