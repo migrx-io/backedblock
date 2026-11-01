@@ -4,6 +4,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -153,10 +154,9 @@ func versionCmd() *cobra.Command {
 				mod += " (" + shortSHA(sha) + ")"
 			}
 			return ui.Result(v, func(w io.Writer) {
-				ui.Table(w, []string{"COMPONENT", "VERSION"},
-					[]string{"bbctl", Version},
-					[]string{"terraform", tf.DefaultVersion},
-					[]string{"terraform-aws-mgx", mod})
+				fmt.Fprintf(w, "%-18s %s\n", "bbctl", Version)
+				fmt.Fprintf(w, "%-18s %s\n", "terraform", tf.DefaultVersion)
+				fmt.Fprintf(w, "%-18s %s\n", "terraform-aws-mgx", mod)
 			})
 		},
 	}

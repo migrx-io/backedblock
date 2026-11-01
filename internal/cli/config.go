@@ -391,23 +391,12 @@ func (a *app) configListCmd() *cobra.Command {
 					fmt.Fprintln(w, "no storage configs here; create one with `bbctl config create <name>`")
 					return
 				}
-				var rows [][]string
-				var broken []entry
 				for _, e := range list {
 					if e.Error != "" {
-						rows = append(rows, []string{e.Storage, e.Config, "-", "-", "-", "-"})
-						broken = append(broken, e)
+						fmt.Fprintf(w, "%-16s %-24s error: %s\n", e.Storage, e.Config, e.Error)
 						continue
 					}
-					mgmt := "no"
-					if e.Mgmt {
-						mgmt = "yes"
-					}
-					rows = append(rows, []string{e.Storage, e.Config, e.Region, strconv.Itoa(e.Pools), strconv.Itoa(e.Nodes), mgmt})
-				}
-				ui.Table(w, []string{"NAME", "FILE", "REGION", "POOLS", "NODES", "MGMT"}, rows...)
-				for _, e := range broken {
-					fmt.Fprintln(w, e.Error)
+					fmt.Fprintf(w, "%-16s %-24s %-14s pools=%d nodes=%d mgmt=%t\n", e.Storage, e.Config, e.Region, e.Pools, e.Nodes, e.Mgmt)
 				}
 			})
 		},

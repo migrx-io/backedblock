@@ -191,7 +191,7 @@ func (a *app) poolListCmd() *cobra.Command {
 			}
 			return ui.Result(map[string]any{"pools": c.Pools}, func(w io.Writer) {
 				for _, p := range c.Pools {
-					fmt.Fprintf(w, "%-12s %d x %-14s %-12s cache %d x %d GiB\n", p.Name, p.NodesCount, p.InstanceType, p.AZ, p.DiskCount(), p.EBSVolumes[0].Size)
+					fmt.Fprintf(w, "%-16s %d x %-14s %-12s cache %d x %d GiB\n", p.Name, p.NodesCount, p.InstanceType, p.AZ, p.DiskCount(), p.EBSVolumes[0].Size)
 				}
 			})
 		},

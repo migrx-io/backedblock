@@ -35,6 +35,11 @@ func (c *Client) Session(ctx context.Context, id string, remotePort, localPort i
 			"portNumber":      {fmt.Sprint(remotePort)},
 			"localPortNumber": {fmt.Sprint(localPort)},
 		}
+	} else {
+		// The default session is /bin/sh: no completion, history or login
+		// PATH. A login bash has them. It runs as ssm-user, as before.
+		in.DocumentName = aws.String("AWS-StartInteractiveCommand")
+		in.Parameters = map[string][]string{"command": {"bash -l"}}
 	}
 	endpoint, err := ssm.NewDefaultEndpointResolverV2().ResolveEndpoint(ctx, ssm.EndpointParameters{Region: aws.String(c.Region())})
 	if err != nil {

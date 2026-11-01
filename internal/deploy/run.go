@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/migrx-io/backedblock/internal/awsx"
 	"github.com/migrx-io/backedblock/internal/render"
@@ -285,16 +287,51 @@ func (d *Deployment) Outputs(ctx context.Context, s render.Stack) (map[string]an
 	return out, nil
 }
 
-// InstanceIDs extracts the instance_ids output of a node stack.
+// InstanceIDs extracts the instance_ids output of a node stack. The modules
+// key it by node, "<pool>-<idx>" or "mgmt-<idx>"; the IDs come back in index
+// order, which is what --node counts in. A plain list is taken as is.
 func InstanceIDs(out map[string]any) []string {
-	raw, _ := out["instance_ids"].([]any)
 	var ids []string
-	for _, v := range raw {
-		if s, ok := v.(string); ok {
-			ids = append(ids, s)
+	switch raw := out["instance_ids"].(type) {
+	case []any:
+		for _, v := range raw {
+			if s, ok := v.(string); ok {
+				ids = append(ids, s)
+			}
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(raw))
+		for k := range raw {
+			keys = append(keys, k)
+		}
+		sort.Slice(keys, func(i, j int) bool { return nodeIndexLess(keys[i], keys[j]) })
+		for _, k := range keys {
+			if s, ok := raw[k].(string); ok {
+				ids = append(ids, s)
+			}
 		}
 	}
 	return ids
+}
+
+// nodeIndexLess orders node keys by their numeric suffix, so pool1-10 comes
+// after pool1-9; keys without one sort as strings.
+func nodeIndexLess(a, b string) bool {
+	ai, aok := nodeIndex(a)
+	bi, bok := nodeIndex(b)
+	if aok && bok && ai != bi {
+		return ai < bi
+	}
+	return a < b
+}
+
+func nodeIndex(k string) (int, bool) {
+	i := strings.LastIndexByte(k, '-')
+	if i < 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(k[i+1:])
+	return n, err == nil
 }
 
 // applied reports whether a stack has outputs in its state. Errors are

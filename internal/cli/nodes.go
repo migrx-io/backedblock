@@ -53,7 +53,11 @@ SSM agent status and the status of its provisioning run.`,
 					}
 					fmt.Fprintf(w, "%-16s %s\n", s.ID, state)
 					for _, n := range s.Nodes {
-						fmt.Fprintf(w, "  %-20s %-10s %-15s %-12s ssm=%-14s provision=%s\n", n.InstanceID, n.State, n.PrivateIP, n.AZ, orNone(n.SSM), orNone(n.Provision))
+						provision := orNone(n.Provision)
+						if n.ProvisionDetail != "" {
+							provision += " (" + n.ProvisionDetail + ")"
+						}
+						fmt.Fprintf(w, "  %-20s %-10s %-15s %-12s ssm=%-14s provision=%s\n", n.InstanceID, n.State, n.PrivateIP, n.AZ, orNone(n.SSM), provision)
 					}
 				}
 			})
@@ -303,7 +307,7 @@ func (a *app) connectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "connect",
 		Short: "open a shell on a node, or forward a port from it, over SSM",
-		Long: `Connect starts an interactive Session Manager shell on a node, or with
+		Long: `Connect opens a login shell (bash) on a node over Session Manager, or with
 --forward a local port forward.`,
 		Example: `  bbctl connect prod
   bbctl connect prod --pool pool2 --node 1
