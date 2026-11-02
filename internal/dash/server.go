@@ -1,6 +1,8 @@
 // Package dash is the local dashboard behind `bbctl ui`: a web server on
-// 127.0.0.1 that logs in to a pool's cluster API and reads Prometheus, both
-// reached through SSM port forwards that the caller sets up.
+// 127.0.0.1 that shows what the clusters' Prometheus holds, the data behind
+// the mgx-metrics Grafana dashboards. The cluster API is used only to check
+// the login. Both are reached through SSM port forwards that the caller sets
+// up; nothing comes from bbctl's config or AWS.
 package dash
 
 import (
@@ -10,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
@@ -18,54 +21,61 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/migrx-io/backedblock/internal/awsx"
 )
 
 //go:embed web
 var web embed.FS
 
-// Config is what the dashboard shows and where it reads it from.
+// Config is where the dashboard reads from.
 type Config struct {
-	Deployment string
-	Region     string
-	Pool       string
-	Pools      []string
 	// Cluster is the cluster (and namespace) to log in to.
 	Cluster string
-	// Gateway is the host:port of the forwarded cluster API.
+	// Gateway is the host:port of a cluster API, used to check logins.
 	Gateway string
-	// Prometheus is the base URL of the forwarded Prometheus; empty when the
-	// pool has no metrics.
+	// LoginHint tells the login page where the password is.
+	LoginHint string
+	// Pools are the pools to show.
+	Pools []Pool
+}
+
+// Pool is where one pool's series are.
+type Pool struct {
+	Name string
+	// Prometheus is the base URL of a Prometheus holding the pool's series;
+	// empty when the pool has no metrics.
 	Prometheus string
-	// PoolLabel limits Prometheus series to the pool. It is set when
-	// Prometheus is the management plane's, which holds every pool's series
-	// labelled pool="<name>".
-	PoolLabel string
-	// Nodes returns the pool's nodes as EC2 and SSM see them, in node order.
-	Nodes func(ctx context.Context) ([]awsx.Node, error)
+	// Label limits series to the pool. It is set when Prometheus is the
+	// management plane's, which holds every pool's series labelled
+	// pool="<name>"; a pool's own Prometheus holds only that pool.
+	Label string
+}
+
+type pool struct {
+	name  string
+	prom  *prometheus
+	label string
 }
 
 // Server serves the page and its JSON API.
 type Server struct {
-	cfg  Config
-	gw   *gateway
-	prom *prometheus
+	cfg   Config
+	gw    *gateway
+	pools []*pool
 
 	mu       sync.Mutex
-	sessions map[string]*session
-}
-
-type session struct {
-	user, password, token string
+	sessions map[string]bool
 }
 
 const cookieName = "bbctl_ui"
 
 func New(cfg Config) *Server {
-	s := &Server{cfg: cfg, gw: &gateway{addr: cfg.Gateway, cluster: cfg.Cluster}, sessions: map[string]*session{}}
-	if cfg.Prometheus != "" {
-		s.prom = &prometheus{base: cfg.Prometheus}
+	s := &Server{cfg: cfg, gw: &gateway{addr: cfg.Gateway, cluster: cfg.Cluster}, sessions: map[string]bool{}}
+	for _, p := range cfg.Pools {
+		pp := &pool{name: p.Name, label: p.Label}
+		if p.Prometheus != "" {
+			pp.prom = &prometheus{base: p.Prometheus}
+		}
+		s.pools = append(s.pools, pp)
 	}
 	return s
 }
@@ -80,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/logout", s.logout)
 	mux.HandleFunc("GET /api/overview", s.authed(s.overview))
 	mux.HandleFunc("GET /api/series", s.authed(s.series))
+	mux.HandleFunc("GET /api/cache", s.authed(s.cache))
 	return localOnly(mux)
 }
 
@@ -110,19 +121,27 @@ func writeError(w http.ResponseWriter, code int, err error) {
 	writeJSON(w, code, map[string]string{"error": err.Error()})
 }
 
-// info is what the login page shows before there is a session.
-func (s *Server) info(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"deployment": s.cfg.Deployment, "pool": s.cfg.Pool, "cluster": s.cfg.Cluster})
+func (s *Server) poolNames() []string {
+	names := make([]string, len(s.pools))
+	for i, p := range s.pools {
+		names[i] = p.name
+	}
+	return names
 }
 
+// info is what the page needs before there is a session.
+func (s *Server) info(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"cluster": s.cfg.Cluster, "login_hint": s.cfg.LoginHint, "pools": s.poolNames()})
+}
+
+// login checks the user against the cluster API and starts a session.
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var in struct{ Username, Password string }
 	if r.Header.Get("Content-Type") != "application/json" || json.NewDecoder(r.Body).Decode(&in) != nil || in.Username == "" {
 		writeError(w, http.StatusBadRequest, errors.New("username and password are required"))
 		return
 	}
-	token, err := s.gw.login(r.Context(), in.Username, in.Password)
-	if err != nil {
+	if _, err := s.gw.login(r.Context(), in.Username, in.Password); err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
@@ -130,8 +149,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	_, _ = rand.Read(b)
 	id := hex.EncodeToString(b)
 	s.mu.Lock()
-	// The password is kept to log in again when the gateway's token expires.
-	s.sessions[id] = &session{user: in.Username, password: in.Password, token: token}
+	s.sessions[id] = true
 	s.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: id, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	writeJSON(w, http.StatusOK, map[string]string{"user": in.Username})
@@ -147,152 +165,183 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-type ctxKey struct{}
-
 func (s *Server) authed(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var sess *session
+		ok := false
 		if c, err := r.Cookie(cookieName); err == nil {
 			s.mu.Lock()
-			sess = s.sessions[c.Value]
+			ok = s.sessions[c.Value]
 			s.mu.Unlock()
 		}
-		if sess == nil {
+		if !ok {
 			writeError(w, http.StatusUnauthorized, errUnauthorized)
 			return
 		}
-		h(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, sess)))
+		h(w, r)
 	}
 }
 
-// gatewayGet calls the cluster API with the session's token, logging in
-// again once if the token has expired.
-func (s *Server) gatewayGet(ctx context.Context, path string, v any) error {
-	sess := ctx.Value(ctxKey{}).(*session)
-	s.mu.Lock()
-	token := sess.token
-	s.mu.Unlock()
-	err := s.gw.get(ctx, token, path, v)
-	if !errors.Is(err, errUnauthorized) {
-		return err
+// selected returns the pools a request asks for: ?pool=a,b, or every pool
+// for "all" or none. They come back in the configured order.
+func (s *Server) selected(r *http.Request) ([]*pool, error) {
+	q := r.URL.Query().Get("pool")
+	if q == "" || q == "all" {
+		return s.pools, nil
 	}
-	if token, err = s.gw.login(ctx, sess.user, sess.password); err != nil {
-		return errUnauthorized
+	want := map[string]bool{}
+	for _, name := range strings.Split(q, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			want[name] = true
+		}
 	}
-	s.mu.Lock()
-	sess.token = token
-	s.mu.Unlock()
-	return s.gw.get(ctx, token, path, v)
+	var out []*pool
+	for _, p := range s.pools {
+		if want[p.name] {
+			out = append(out, p)
+			delete(want, p.name)
+		}
+	}
+	for name := range want {
+		return nil, fmt.Errorf("no pool %q", name)
+	}
+	if len(out) == 0 {
+		return s.pools, nil
+	}
+	return out, nil
+}
+
+// each runs f for every pool in parallel and waits.
+func each(pools []*pool, f func(i int, p *pool)) {
+	var wg sync.WaitGroup
+	for i, p := range pools {
+		wg.Add(1)
+		go func() { defer wg.Done(); f(i, p) }()
+	}
+	wg.Wait()
+}
+
+// warn prefixes an error with its pool when there is more than one.
+func (s *Server) warn(p *pool, err error) string {
+	if len(s.pools) > 1 {
+		return p.name + ": " + err.Error()
+	}
+	return err.Error()
+}
+
+var errNoMetrics = errors.New("no metrics: enable_metrics is off")
+
+// selector is the pool's label matcher, empty or `pool="x"`.
+func (p *pool) selector() string {
+	if p.label == "" {
+		return ""
+	}
+	return `pool="` + p.label + `"`
+}
+
+// matchers joins label matchers for a selector's braces.
+func matchers(m ...string) string {
+	var out []string
+	for _, s := range m {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return strings.Join(out, ",")
 }
 
 // NodeView is one row of the node table.
 type NodeView struct {
-	Hostname   string `json:"hostname,omitempty"`
-	IP         string `json:"ip"`
-	UUID       string `json:"uuid,omitempty"`
-	Status     string `json:"status"` // the cluster's view: UP, DOWN, or "" if it does not list the node
-	InstanceID string `json:"instance_id,omitempty"`
-	AZ         string `json:"az,omitempty"`
-	Type       string `json:"instance_type,omitempty"`
-	State      string `json:"state,omitempty"`
-	SSM        string `json:"ssm,omitempty"`
-	Provision  string `json:"provision,omitempty"`
+	Pool     string `json:"pool"`
+	Hostname string `json:"hostname,omitempty"`
+	IP       string `json:"ip"`
+	UUID     string `json:"uuid,omitempty"`
+	// Status is what the node's cluster reports for it: UP, DOWN, or ""
+	// when the node publishes no core_cluster_nodes series.
+	Status string `json:"status"`
 	// Services maps core, cache and storage to whether Prometheus could
-	// scrape them; missing when there are no metrics for the node.
+	// scrape them.
 	Services map[string]bool `json:"services,omitempty"`
 	CPU      *float64        `json:"cpu,omitempty"`
 	RAM      *float64        `json:"ram,omitempty"`
 }
 
-// Overview is the main view.
+// Overview is the main view: the mgx-metrics "Core" dashboard.
 type Overview struct {
-	Deployment string     `json:"deployment"`
-	Region     string     `json:"region"`
-	Pool       string     `json:"pool"`
-	Pools      []string   `json:"pools"`
-	Cluster    string     `json:"cluster"`
-	VIP        string     `json:"vip,omitempty"`
-	VIPNode    string     `json:"vip_node,omitempty"`
-	Metrics    bool       `json:"metrics"`
-	Nodes      []NodeView `json:"nodes"`
+	Cluster string     `json:"cluster"`
+	Pools   []string   `json:"pools"`
+	Nodes   []NodeView `json:"nodes"`
 	// Warnings are sources that failed; the rest of the view still shows.
 	Warnings []string `json:"warnings,omitempty"`
 }
 
-var services = []string{"core", "cache", "storage"}
-
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
-	defer cancel()
-	ov := Overview{Deployment: s.cfg.Deployment, Region: s.cfg.Region, Pool: s.cfg.Pool, Pools: s.cfg.Pools, Cluster: s.cfg.Cluster, Metrics: s.prom != nil}
-
-	var (
-		wg                  sync.WaitGroup
-		ec2                 []awsx.Node
-		clusters            []clusterInfo
-		members             []clusterNode
-		up, cpu, ram        []sample
-		ec2Err, gwErr, mErr error
-	)
-	wg.Add(2)
-	go func() { defer wg.Done(); ec2, ec2Err = s.cfg.Nodes(ctx) }()
-	go func() {
-		defer wg.Done()
-		if gwErr = s.gatewayGet(ctx, "/api/v1/cluster", &clusters); gwErr == nil {
-			gwErr = s.gatewayGet(ctx, "/api/v1/cluster/"+s.cfg.Cluster+"/nodes", &members)
-		}
-	}()
-	if s.prom != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sel := s.selector()
-			if up, mErr = s.prom.query(ctx, `up{job=~"core|cache|storage"`+sel+`}`); mErr != nil {
-				return
-			}
-			if cpu, mErr = s.prom.query(ctx, `core_cluster_system_cpu{`+strings.TrimPrefix(sel, ",")+`}`); mErr != nil {
-				return
-			}
-			ram, mErr = s.prom.query(ctx, `core_cluster_system_ram{`+strings.TrimPrefix(sel, ",")+`}`)
-		}()
-	}
-	wg.Wait()
-
-	if errors.Is(gwErr, errUnauthorized) {
-		writeError(w, http.StatusUnauthorized, gwErr)
+	pools, err := s.selected(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	for _, e := range []error{ec2Err, gwErr, mErr} {
-		if e != nil {
-			ov.Warnings = append(ov.Warnings, e.Error())
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	rows := make([][]NodeView, len(pools))
+	errs := make([]error, len(pools))
+	each(pools, func(i int, p *pool) { rows[i], errs[i] = p.overview(ctx) })
+	ov := Overview{Cluster: s.cfg.Cluster, Pools: s.poolNames(), Nodes: []NodeView{}}
+	for i, p := range pools {
+		if errs[i] != nil {
+			ov.Warnings = append(ov.Warnings, s.warn(p, errs[i]))
 		}
+		ov.Nodes = append(ov.Nodes, rows[i]...)
+	}
+	writeJSON(w, http.StatusOK, ov)
+}
+
+// overview is the pool's node rows. Each node publishes its own
+// core_cluster_nodes series (hostname, ip, uuid, status), so the rows are
+// those, ordered by hostname, then any node only `up` knows: one that stopped
+// reporting.
+func (p *pool) overview(ctx context.Context) ([]NodeView, error) {
+	if p.prom == nil {
+		return nil, errNoMetrics
+	}
+	sel := p.selector()
+	var members, up, cpu, ram []sample
+	var errs [4]error
+	var wg sync.WaitGroup
+	for i, q := range []struct {
+		dst  *[]sample
+		expr string
+	}{
+		{&members, "core_cluster_nodes{" + sel + "}"},
+		{&up, "up{" + matchers(`job=~"core|cache|storage"`, sel) + "}"},
+		{&cpu, "core_cluster_system_cpu{" + sel + "}"},
+		{&ram, "core_cluster_system_ram{" + sel + "}"},
+	} {
+		wg.Add(1)
+		go func() { defer wg.Done(); *q.dst, errs[i] = p.prom.query(ctx, q.expr) }()
+	}
+	wg.Wait()
+	if err := errors.Join(errs[:]...); err != nil {
+		return nil, err
 	}
 
-	// Rows come from EC2 in node order, then any node the cluster lists that
-	// EC2 does not (it should not happen, but it should not be hidden).
+	sort.Slice(members, func(i, j int) bool { return members[i].Labels["hostname"] < members[j].Labels["hostname"] })
 	byIP := map[string]*NodeView{}
 	var order []string
 	row := func(ip string) *NodeView {
 		if n, ok := byIP[ip]; ok {
 			return n
 		}
-		n := &NodeView{IP: ip}
+		n := &NodeView{Pool: p.name, IP: ip}
 		byIP[ip] = n
 		order = append(order, ip)
 		return n
 	}
-	for _, n := range ec2 {
-		v := row(n.PrivateIP)
-		v.InstanceID, v.AZ, v.Type, v.State, v.SSM, v.Provision = n.InstanceID, n.AZ, n.Type, n.State, n.SSM, n.Provision
-	}
 	for _, m := range members {
-		v := row(m.IP)
-		v.Hostname, v.UUID, v.Status = m.Hostname, m.UUID, m.Status
-	}
-	for _, c := range clusters {
-		if c.Cluster == s.cfg.Cluster {
-			ov.VIP, ov.VIPNode = c.VIPHost.VIP, c.VIPHost.IP
+		if m.Labels["ip"] == "" {
+			continue
 		}
+		v := row(m.Labels["ip"])
+		v.Hostname, v.UUID, v.Status = m.Labels["hostname"], m.Labels["uuid"], m.Labels["status"]
 	}
 	for _, smp := range up {
 		ip := scrapedHost(smp.Labels)
@@ -317,19 +366,24 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			row(ip).RAM = &val
 		}
 	}
-	ov.Nodes = make([]NodeView, 0, len(order))
+	rows := make([]NodeView, 0, len(order))
 	for _, ip := range order {
-		ov.Nodes = append(ov.Nodes, *byIP[ip])
+		rows = append(rows, *byIP[ip])
 	}
-	writeJSON(w, http.StatusOK, ov)
+	return rows, nil
 }
 
-// selector is the extra label matcher for every query, with a leading comma.
-func (s *Server) selector() string {
-	if s.cfg.PoolLabel == "" {
-		return ""
+// hostnames maps node UUIDs to hostnames, from core_cluster_nodes.
+func (p *pool) hostnames(ctx context.Context) (map[string]string, error) {
+	res, err := p.prom.query(ctx, "core_cluster_nodes{"+p.selector()+"}")
+	if err != nil {
+		return nil, err
 	}
-	return `,pool="` + s.cfg.PoolLabel + `"`
+	m := make(map[string]string, len(res))
+	for _, r := range res {
+		m[r.Labels["uuid"]] = r.Labels["hostname"]
+	}
+	return m, nil
 }
 
 // scrapedHost is the node an up sample is about. Pool nodes scrape peers as
@@ -359,18 +413,21 @@ var charts = map[string]string{
 // Series is one chart's data, aligned for uPlot: one shared time axis and a
 // value (or null) per series at each time.
 type Series struct {
-	Times  []int64    `json:"t"`
-	Series []NodeLine `json:"series"`
+	Times    []int64    `json:"t"`
+	Series   []NodeLine `json:"series"`
+	Warnings []string   `json:"warnings,omitempty"`
 }
 
 type NodeLine struct {
+	Pool   string     `json:"pool"`
 	IP     string     `json:"ip"`
 	Values []*float64 `json:"v"`
 }
 
 func (s *Server) series(w http.ResponseWriter, r *http.Request) {
-	if s.prom == nil {
-		writeError(w, http.StatusNotFound, errors.New("this pool has no metrics (enable_metrics is off)"))
+	pools, err := s.selected(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	metric, ok := charts[r.URL.Query().Get("metric")]
@@ -386,32 +443,51 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 	start := end.Add(-time.Duration(rng) * time.Second)
 	// About 300 points per chart, never finer than the 15s scrape interval.
 	step := max(time.Duration(rng)*time.Second/300, 15*time.Second).Truncate(time.Second)
-	res, err := s.prom.queryRange(r.Context(), metric+"{"+strings.TrimPrefix(s.selector(), ",")+"}", start, end, step)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
+
+	res := make([][]series, len(pools))
+	errs := make([]error, len(pools))
+	each(pools, func(i int, p *pool) {
+		if p.prom == nil {
+			errs[i] = errNoMetrics
+			return
+		}
+		res[i], errs[i] = p.prom.queryRange(r.Context(), metric+"{"+p.selector()+"}", start, end, step)
+	})
+	out := grid(start, end, step)
+	for i, p := range pools {
+		if errs[i] != nil {
+			out.Warnings = append(out.Warnings, s.warn(p, errs[i]))
+			continue
+		}
+		out.add(p.name, res[i])
 	}
-	writeJSON(w, http.StatusOK, align(res, start, end, step))
+	writeJSON(w, http.StatusOK, out)
 }
 
-// align puts every series on the same time grid, start + k*step.
-func align(res []series, start, end time.Time, step time.Duration) Series {
-	var out Series
-	idx := map[int64]int{}
+// grid is an empty chart on the time grid start + k*step.
+func grid(start, end time.Time, step time.Duration) *Series {
+	out := &Series{Series: []NodeLine{}}
 	for t := start.Unix(); t <= end.Unix(); t += int64(step.Seconds()) {
-		idx[t] = len(out.Times)
 		out.Times = append(out.Times, t)
+	}
+	return out
+}
+
+// add puts a pool's series on the chart's grid, ordered by IP.
+func (out *Series) add(poolName string, res []series) {
+	idx := make(map[int64]int, len(out.Times))
+	for i, t := range out.Times {
+		idx[t] = i
 	}
 	sort.Slice(res, func(i, j int) bool { return res[i].Labels["ip"] < res[j].Labels["ip"] })
 	for _, sr := range res {
-		line := NodeLine{IP: sr.Labels["ip"], Values: make([]*float64, len(out.Times))}
-		for _, p := range sr.Points {
-			if i, ok := idx[int64(p[0])]; ok {
-				v := p[1]
+		line := NodeLine{Pool: poolName, IP: sr.Labels["ip"], Values: make([]*float64, len(out.Times))}
+		for _, pt := range sr.Points {
+			if i, ok := idx[int64(pt[0])]; ok {
+				v := pt[1]
 				line.Values[i] = &v
 			}
 		}
 		out.Series = append(out.Series, line)
 	}
-	return out
 }

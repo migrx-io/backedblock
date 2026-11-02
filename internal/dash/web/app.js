@@ -5,7 +5,7 @@ const REFRESH_MS = 15000;
 const SERIES_SLOTS = 8;
 
 const $ = (id) => document.getElementById(id);
-const state = { range: 3600, overview: null, charts: {}, timer: null, updatedAt: 0 };
+const state = { range: 3600, overview: null, charts: {}, timer: null, updatedAt: 0, pools: [] };
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -15,16 +15,20 @@ function css(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-// Color follows the node: its position in the node table, which is the
-// deployment's node order. Past eight nodes the rest are drawn in muted ink
-// and stay identified by the legend and the table.
-function nodeColor(ip) {
-  const i = (state.overview?.nodes || []).findIndex((n) => n.ip === ip);
+// Color follows the node: its position in the node table. Past eight nodes
+// the rest are drawn in muted ink and stay identified by the legend and the
+// table.
+function nodeIndex(pool, ip) {
+  return (state.overview?.nodes || []).findIndex((n) => n.pool === pool && n.ip === ip);
+}
+
+function nodeColor(pool, ip) {
+  const i = nodeIndex(pool, ip);
   return i >= 0 && i < SERIES_SLOTS ? css(`--s${i + 1}`) : css("--muted");
 }
 
-function nodeName(ip) {
-  const n = (state.overview?.nodes || []).find((n) => n.ip === ip);
+function nodeName(pool, ip) {
+  const n = state.overview?.nodes[nodeIndex(pool, ip)];
   return n?.hostname || ip;
 }
 
@@ -78,8 +82,91 @@ function showMain() {
   $("login-view").hidden = true;
   $("main-view").hidden = false;
   $("logout").hidden = false;
+  $("tabs").hidden = false;
+  applyView();
   refresh();
 }
+
+// The view and the pool are in the URL hash (#cache&pool=pool1), so a reload
+// keeps both.
+function hashParams() {
+  const [view, ...rest] = location.hash.replace(/^#/, "").split("&");
+  return { view, pool: new URLSearchParams(rest.join("&")).get("pool") || "all" };
+}
+
+function currentView() {
+  return hashParams().view === "cache" ? "cache" : "overview";
+}
+
+// The selected pools, in the configured order; every pool when none is
+// picked (or the URL names none that exist).
+function selectedPools() {
+  const want = new Set(hashParams().pool.split(","));
+  const picked = state.pools.filter((p) => want.has(p));
+  return picked.length ? picked : [...state.pools];
+}
+
+function allPicked() {
+  return selectedPools().length === state.pools.length;
+}
+
+function setHash(view, pools) {
+  const all = !pools || pools.length === 0 || pools.length === state.pools.length;
+  location.hash = view + (all ? "" : `&pool=${pools.map(encodeURIComponent).join(",")}`);
+}
+
+function poolQuery() {
+  return `pool=${allPicked() ? "all" : selectedPools().map(encodeURIComponent).join(",")}`;
+}
+
+document.querySelectorAll("#tabs a").forEach((a) =>
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    setHash(a.dataset.view, allPicked() ? [] : selectedPools());
+  }),
+);
+
+$("pool-menu").addEventListener("change", (e) => {
+  const box = e.target;
+  let pools;
+  if (box.value === "*") {
+    pools = []; // all
+  } else {
+    pools = [...$("pool-menu").querySelectorAll("input[data-pool]:checked")].map((b) => b.value);
+  }
+  // Unticking the last pool means every pool, never none.
+  setHash(currentView(), pools);
+});
+
+// Close the menu on a click outside it.
+document.addEventListener("click", (e) => {
+  if (!$("pool-pick").contains(e.target)) $("pool-pick").open = false;
+});
+
+function renderPools() {
+  $("pool-pick").hidden = state.pools.length === 0;
+  const picked = new Set(selectedPools());
+  const all = allPicked();
+  $("pool-menu").innerHTML =
+    `<label class="all"><input type="checkbox" value="*" ${all ? "checked disabled" : ""}> All pools</label>` +
+    state.pools.map((p) => `<label><input type="checkbox" data-pool value="${esc(p)}" ${!all && picked.has(p) ? "checked" : ""}> ${esc(p)}</label>`).join("");
+  $("pool-label").textContent = all ? "All" : [...picked].join(", ");
+  document.body.classList.toggle("multi-pool", picked.size > 1);
+}
+
+function applyView() {
+  renderPools();
+  const v = currentView();
+  document.querySelectorAll(".view").forEach((el) => (el.hidden = el.id !== `view-${v}`));
+  document.querySelectorAll("#tabs a").forEach((a) => (a.dataset.view === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+}
+
+window.addEventListener("hashchange", () => {
+  if ($("main-view").hidden) return;
+  applyView();
+  $("warnings").innerHTML = "";
+  refresh();
+});
 
 function stopRefresh() {
   clearTimeout(state.timer);
@@ -91,9 +178,13 @@ async function refresh() {
   // Keep the previous render, dimmed, while new data loads.
   document.querySelectorAll(".chart").forEach((c) => c.classList.add("loading"));
   try {
-    state.overview = await api("/api/overview");
-    renderOverview(state.overview);
-    await renderCharts();
+    if (currentView() === "cache") {
+      renderCache(await api(`/api/cache?${poolQuery()}`));
+    } else {
+      state.overview = await api(`/api/overview?${poolQuery()}`);
+      renderOverview(state.overview);
+      await renderCharts();
+    }
     state.updatedAt = Date.now();
   } catch (err) {
     if (err.auth) return showLogin();
@@ -104,19 +195,11 @@ async function refresh() {
   state.timer = setTimeout(refresh, REFRESH_MS);
 }
 
-function renderHeader(ov) {
-  $("deployment").textContent = ov.deployment;
-  document.title = `${ov.deployment} · bbctl ui`;
-  const pools = ov.pools.length > 1 ? ` <span class="dim">of ${ov.pools.map(esc).join(", ")}</span>` : "";
-  $("meta").innerHTML = `<span>region <b>${esc(ov.region)}</b></span><span>pool <b>${esc(ov.pool)}</b>${pools}</span>`;
-}
-
 function kpi(label, value, sub, cls) {
   return `<div class="kpi"><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div><div class="s ${cls || ""}">${esc(sub || "")}</div></div>`;
 }
 
 function renderOverview(ov) {
-  renderHeader(ov);
   $("warnings").innerHTML = (ov.warnings || []).map((w) => `<div>${esc(w)}</div>`).join("");
 
   const nodes = ov.nodes;
@@ -124,25 +207,16 @@ function renderOverview(ov) {
   const listed = nodes.filter((n) => n.status).length;
   const down = (svc) => nodes.filter((n) => n.services && n.services[svc] === false).length;
   const tiles = [
-    kpi("Nodes", nodes.length, `${listed} in the cluster`),
+    kpi("Nodes", nodes.length, listed === nodes.length ? "all reporting" : `${nodes.length - listed} not reporting`, listed === nodes.length ? "" : "bad"),
     kpi("Nodes up", up, up === nodes.length && nodes.length ? "all up" : `${nodes.length - up} not up`, up === nodes.length && nodes.length ? "good" : "bad"),
   ];
-  if (ov.metrics) {
-    for (const svc of ["core", "cache", "storage"]) {
-      const d = down(svc);
-      tiles.push(kpi(`${svc[0].toUpperCase() + svc.slice(1)} down`, d, d ? "see the table" : "none", d ? "bad" : "good"));
-    }
+  for (const svc of ["core", "cache", "storage"]) {
+    const d = down(svc);
+    tiles.push(kpi(`${svc[0].toUpperCase() + svc.slice(1)} down`, d, d ? "see the table" : "none", d ? "bad" : "good"));
   }
   $("kpis").innerHTML = tiles.join("");
 
-  // The gateway reports 127.0.0.1 when no VIP address is assigned; the node
-  // holding the VIP role is still worth showing.
-  const vipNode = ov.vip_node ? esc(nodeName(ov.vip_node)) : "";
-  const vipAddr = ov.vip && !ov.vip.startsWith("127.") ? `<b>${esc(ov.vip)}</b> on ` : "";
-  const vip = vipNode ? ` · VIP ${vipAddr}${vipNode}` : "";
-  $("cluster-line").innerHTML = `cluster <b>${esc(ov.cluster)}</b>${vip}`;
-
-  $("nodes").innerHTML = nodes.map(nodeRow).join("") || `<tr><td colspan="12" class="dim">No nodes yet. Run bbctl apply.</td></tr>`;
+  $("nodes").innerHTML = nodes.map(nodeRow).join("") || `<tr><td colspan="10" class="dim">No nodes report to Prometheus.</td></tr>`;
 }
 
 function status(text, kind) {
@@ -152,7 +226,7 @@ function status(text, kind) {
 function clusterStatus(n) {
   if (n.status === "UP") return status("UP", "good");
   if (n.status === "DOWN") return status("DOWN", "bad");
-  return status("not listed", "none");
+  return status("not reporting", "none");
 }
 
 function service(n, svc) {
@@ -166,21 +240,10 @@ function meter(v) {
   return `<span class="meter"><span>${v.toFixed(1)}%</span><span class="track"><span class="fill" style="width:${pct}%"></span></span></span>`;
 }
 
-function ssmStatus(s) {
-  if (!s) return status("–", "none");
-  return status(s, s === "Online" ? "good" : "warn");
-}
-
-function provision(p) {
-  if (p === "Success") return status("done", "good");
-  if (p === "Failed") return status("failed", "bad");
-  if (!p) return status("–", "none");
-  return status(p.toLowerCase(), "warn");
-}
-
 function nodeRow(n) {
   return `<tr>
-    <td><span class="swatch" style="background:${nodeColor(n.ip)}"></span></td>
+    <td><span class="swatch" style="background:${nodeColor(n.pool, n.ip)}"></span></td>
+    <td class="col-pool">${esc(n.pool)}</td>
     <td><div class="name">${esc(n.hostname || n.ip)}</div><div class="ip">${esc(n.ip)}</div></td>
     <td>${clusterStatus(n)}</td>
     <td>${service(n, "core")}</td>
@@ -188,11 +251,80 @@ function nodeRow(n) {
     <td>${service(n, "storage")}</td>
     <td class="num">${meter(n.cpu)}</td>
     <td class="num">${meter(n.ram)}</td>
-    <td><div>${esc(n.instance_id || "–")}</div><div class="dim">${esc([n.instance_type, n.az].filter(Boolean).join(" · "))}</div></td>
-    <td>${n.state ? status(n.state, n.state === "running" ? "good" : "warn") : status("–", "none")}</td>
-    <td>${ssmStatus(n.ssm)}</td>
-    <td>${provision(n.provision)}</td>
+    <td class="dim">${esc(n.uuid || "–")}</td>
   </tr>`;
+}
+
+// --- cache --------------------------------------------------------------
+
+// Sizes come in MiB; show them in GiB or TiB (binary units, as the cache
+// plugin reports them).
+function size(mib) {
+  if (mib == null) return "–";
+  const gib = mib / 1024;
+  return gib >= 1024 ? `${(gib / 1024).toFixed(2)} TiB` : `${gib.toFixed(gib >= 100 ? 0 : 1)} GiB`;
+}
+
+function check(ok, good = "ok", bad = "failed") {
+  return ok ? status(good, "good") : status(bad, "bad");
+}
+
+function nodeCell(n) {
+  return `<div class="name">${esc(n.hostname || n.node)}</div>${n.ip ? `<div class="ip">${esc(n.ip)}</div>` : ""}`;
+}
+
+function renderCache(c) {
+  $("warnings").innerHTML = (c.warnings || []).map((w) => `<div>${esc(w)}</div>`).join("");
+  const s = c.summary;
+  const total = s.nodes_up + s.nodes_down;
+  const downTile = (label, n) => kpi(label, n, n ? "see the tables" : "none", n ? "bad" : "good");
+  $("cache-kpis").innerHTML = [
+    kpi("Cache nodes up", s.nodes_up, total ? `of ${total}` : "no cache nodes report", s.nodes_up === total && total ? "good" : "bad"),
+    downTile("Cache nodes down", s.nodes_down),
+    downTile("RAID down", s.raids_down),
+    downTile("Mounts down", s.mounts_down),
+    kpi("RW cache", size(s.rw_mib), "write-back, all nodes"),
+    kpi("Read cache", size(s.r_mib), "all nodes"),
+    kpi("Disks", s.disks, "cache disks, all nodes"),
+  ].join("");
+
+  const empty = (cols, what) => `<tr><td colspan="${cols}" class="dim">No ${what} reported.</td></tr>`;
+
+  $("cache-nodes").innerHTML = c.nodes.map((n) => `<tr>
+    <td class="col-pool">${esc(n.pool)}</td>
+    <td>${nodeCell(n)}</td>
+    <td>${check(n.status, "up", "down")}</td>
+    <td>${check(n.mounts, "attached", "detached")}</td>
+    <td>${check(n.errors, "passing", "failing")}</td>
+    <td class="num">${n.disks}</td>
+    <td class="num">${size(n.rw_mib)}</td>
+    <td class="num">${size(n.r_mib)}</td>
+  </tr>`).join("") || empty(8, "cache nodes");
+
+  $("cache-raids").innerHTML = c.raids.map((r) => {
+    const bad = r.members.filter((m) => !m.ok);
+    const summary = `${r.members.length - bad.length} of ${r.members.length} active` + (r.total_devices && r.total_devices !== r.members.length ? ` · ${r.total_devices} expected` : "");
+    const list = r.members.map((m) => `<li>${esc(m.device)} — ${m.ok ? esc(m.state) : `<b class="st bad">${esc(m.state || "missing")}</b>`}</li>`).join("");
+    return `<tr>
+      <td class="col-pool">${esc(r.pool)}</td>
+      <td>${nodeCell(r)}</td>
+      <td class="mono">${esc(r.raid)}</td>
+      <td>${esc(r.level)}</td>
+      <td>${check(r.state_ok && r.ok, r.state || "ok", r.state || "failed")}</td>
+      <td>${check(r.no_failed, "none", "failed")}</td>
+      <td><details class="members"><summary>${bad.length ? status(summary, "bad") : esc(summary)}</summary><ul>${list}</ul></details></td>
+    </tr>`;
+  }).join("") || empty(7, "RAIDs");
+
+  $("cache-mounts").innerHTML = c.mounts.map((m) => `<tr>
+    <td class="col-pool">${esc(m.pool)}</td>
+    <td>${nodeCell(m)}</td>
+    <td>${m.kind === "rw" ? "read-write" : m.kind === "r" ? "read" : esc(m.kind)}</td>
+    <td class="mono">${esc(m.mountpoint)}</td>
+    <td class="mono">${esc(m.device)}</td>
+    <td class="mono">${esc(m.options)}</td>
+    <td>${check(m.ok, "mounted", "down")}</td>
+  </tr>`).join("") || empty(7, "mounts");
 }
 
 // --- charts -------------------------------------------------------------
@@ -206,16 +338,9 @@ document.querySelectorAll("#filters [data-range]").forEach((b) =>
 );
 
 async function renderCharts() {
-  if (!state.overview.metrics) {
-    $("filters").hidden = true;
-    $("charts").hidden = true;
-    return;
-  }
-  $("filters").hidden = false;
-  $("charts").hidden = false;
   await Promise.all(["cpu", "ram"].map(async (m) => {
     try {
-      drawChart(m, await api(`/api/series?metric=${m}&range=${state.range}`));
+      drawChart(m, await api(`/api/series?metric=${m}&range=${state.range}&${poolQuery()}`));
     } catch (err) {
       if (err.auth) throw err;
       emptyChart(m, err.message);
@@ -233,7 +358,8 @@ function drawChart(metric, data) {
   const el = $(`chart-${metric}`);
   if (!data.series || data.series.length === 0) return emptyChart(metric, "No data yet.");
 
-  const key = data.series.map((s) => s.ip).join(",") + "|" + state.range;
+  // Recreated when the nodes change, so colors and labels follow them.
+  const key = data.series.map((s) => s.pool + "/" + s.ip).join(",") + "|" + state.range;
   const aligned = [data.t, ...data.series.map((s) => s.v)];
   const existing = state.charts[metric];
   // Same nodes and range: update in place, so the chart does not flash.
@@ -264,8 +390,8 @@ function drawChart(metric, data) {
     series: [
       { value: (u, v) => (v == null ? "–" : new Date(v * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })) },
       ...data.series.map((s) => ({
-        label: nodeName(s.ip),
-        stroke: nodeColor(s.ip),
+        label: nodeName(s.pool, s.ip),
+        stroke: nodeColor(s.pool, s.ip),
         width: 2,
         points: { show: false },
         value: (u, v) => (v == null ? "–" : v.toFixed(1) + "%"),
@@ -288,9 +414,14 @@ window.addEventListener("resize", () => {
 (async () => {
   try {
     const info = await api("/api/info");
-    $("deployment").textContent = info.deployment;
-    $("login-cluster").textContent = `${info.deployment} / ${info.pool}`;
-    $("login-hint").textContent = `bbctl secrets get ${info.deployment} MGX_GW_ADMIN_PASSWD`;
+    state.pools = info.pools || [];
+    $("cluster").textContent = info.cluster;
+    document.title = `${info.cluster} · bbctl ui`;
+    $("login-cluster").textContent = `cluster ${info.cluster}`;
+    if (info.login_hint) {
+      $("login-hint").textContent = info.login_hint;
+      $("login-hint-line").hidden = false;
+    }
     const resp = await fetch("/api/overview", { credentials: "same-origin" });
     if (resp.status === 401) return showLogin();
     showMain();

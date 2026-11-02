@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/migrx-io/backedblock/internal/awsx"
 	"github.com/migrx-io/backedblock/internal/deploy"
 	"github.com/migrx-io/backedblock/internal/render"
 	"github.com/migrx-io/backedblock/internal/ui"
@@ -301,6 +302,29 @@ func (a *app) execCmd() *cobra.Command {
 	return cmd
 }
 
+// forwardInstanceEnv names the instance for a forward started by `bbctl ui`,
+// which has already resolved it.
+const forwardInstanceEnv = "BBCTL_FORWARD_INSTANCE"
+
+// forwardTo runs a port forward to a known instance. It needs only the
+// config's region: no Terraform, so it does not contend for the stacks'
+// working directories with another bbctl.
+func (a *app) forwardTo(ctx context.Context, id string, remote, local int) error {
+	cfg, err := a.load()
+	if err != nil {
+		return err
+	}
+	c, err := awsx.New(ctx, cfg.Region, a.profile)
+	if err != nil {
+		return ui.Wrap(ui.ExitAWS, "", err)
+	}
+	// Does not return on success: the session ends the process.
+	if err := c.Session(ctx, id, remote, local, a.profile); err != nil {
+		return ui.Wrap(ui.ExitAWS, "", err)
+	}
+	return nil
+}
+
 func (a *app) connectCmd() *cobra.Command {
 	var t target
 	var forward string
@@ -317,6 +341,9 @@ func (a *app) connectCmd() *cobra.Command {
 			remote, local, err := parseForward(forward)
 			if err != nil {
 				return err
+			}
+			if id := os.Getenv(forwardInstanceEnv); id != "" && local > 0 {
+				return a.forwardTo(ctx, id, remote, local)
 			}
 			d, err := a.open(ctx)
 			if err != nil {

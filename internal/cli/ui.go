@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -34,10 +36,11 @@ func (a *app) uiCmd() *cobra.Command {
 	var noOpen bool
 	cmd := &cobra.Command{
 		Use:   "ui",
-		Short: "open a dashboard of a pool's cluster in the browser",
-		Long: `Open a dashboard of a pool's cluster in the browser: its nodes, their health
-and metrics. bbctl reaches the cluster API and Prometheus over SSM port
-forwards and serves the page on 127.0.0.1 until Ctrl-C.`,
+		Short: "open a dashboard of the storage's pools in the browser",
+		Long: `Open a dashboard of the storage's pools in the browser: the data of the
+mgx-metrics Grafana dashboards, read from the clusters' Prometheus. bbctl
+reaches it over SSM port forwards and serves the page on 127.0.0.1 until
+Ctrl-C.`,
 		Example: `  bbctl ui prod
   bbctl ui prod --pool pool2 --port 8081`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -49,7 +52,7 @@ forwards and serves the page on 127.0.0.1 until Ctrl-C.`,
 			if err := d.Prepare(ctx, deploy.BucketRequire); err != nil {
 				return err
 			}
-			cfg, err := a.uiConfig(ctx, d, pool)
+			cfg, pools, err := a.uiConfig(ctx, d, pool)
 			if err != nil {
 				return err
 			}
@@ -64,8 +67,8 @@ forwards and serves the page on 127.0.0.1 until Ctrl-C.`,
 				<-ctx.Done()
 				_ = srv.Close()
 			}()
-			if err := ui.Result(map[string]string{"url": url, "pool": cfg.Pool}, func(w io.Writer) {
-				fmt.Fprintf(w, "dashboard for %s/%s at %s (Ctrl-C to stop)\n", d.Cfg.Name, cfg.Pool, url)
+			if err := ui.Result(map[string]any{"url": url, "pools": pools}, func(w io.Writer) {
+				fmt.Fprintf(w, "dashboard for %s (%s) at %s (Ctrl-C to stop)\n", d.Cfg.Name, strings.Join(pools, ", "), url)
 			}); err != nil {
 				return err
 			}
@@ -79,80 +82,119 @@ forwards and serves the page on 127.0.0.1 until Ctrl-C.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&pool, "pool", "", "pool to show (default: the first pool)")
+	f.StringVar(&pool, "pool", "", "show only this pool (default: every pool)")
 	f.IntVar(&port, "port", 8080, "local port for the dashboard")
 	f.BoolVar(&noOpen, "no-open", false, "do not open a browser")
 	return cmd
 }
 
-// uiConfig picks the nodes to read from and starts the port forwards to them.
-// The cluster API is any SSM-online node of the pool. Prometheus is the
-// management plane's when there is one: pools under mgmt keep only their own
-// node's series, and mgmt federates them all, labelled by pool.
-func (a *app) uiConfig(ctx context.Context, d *deploy.Deployment, poolName string) (dash.Config, error) {
-	var poolStack, mgmtStack *render.Stack
-	var pools []string
+// uiConfig finds the nodes to read from and starts the port forwards to
+// them; AWS is used for nothing else. Every applied pool is shown (or only
+// --pool). Prometheus is the management plane's when there is one: it
+// federates every pool's series, labelled by pool. Otherwise each pool has
+// its own. The cluster API, used only to check logins, is the first pool's.
+func (a *app) uiConfig(ctx context.Context, d *deploy.Deployment, only string) (dash.Config, []string, error) {
+	var pools []render.Stack
+	var mgmtStack *render.Stack
+	var names []string
 	for i, s := range d.Stacks {
 		switch s.Kind {
 		case render.KindPool:
-			pools = append(pools, s.Pool)
-			if poolStack == nil && (poolName == "" || s.Pool == poolName) {
-				poolStack = &d.Stacks[i]
+			names = append(names, s.Pool)
+			if only == "" || s.Pool == only {
+				pools = append(pools, s)
 			}
 		case render.KindMgmt:
 			mgmtStack = &d.Stacks[i]
 		}
 	}
-	if poolStack == nil {
-		return dash.Config{}, ui.Errf(ui.ExitUsage, fmt.Sprintf("pools: %v", pools), "no pool %q in the config", poolName)
+	if len(pools) == 0 {
+		return dash.Config{}, nil, ui.Errf(ui.ExitUsage, fmt.Sprintf("pools: %v", names), "no pool %q in the config", only)
 	}
-	metrics := false
+	metrics := map[string]bool{}
 	for _, p := range d.Cfg.Pools {
-		if p.Name == poolStack.Pool {
-			metrics = p.EnableMetrics
-		}
+		metrics[p.Name] = p.EnableMetrics
 	}
 
 	st := ui.Begin(d.Cfg.Name, "connecting", 0)
 	defer st.End("", false)
 
-	poolNodes := func(ctx context.Context) ([]awsx.Node, error) { return a.stackNodes(ctx, d, *poolStack) }
-	nodes, err := poolNodes(ctx)
-	if err != nil {
-		return dash.Config{}, err
+	// The pools' nodes; a pool that is not applied yet is left out.
+	online := map[string]string{}
+	var shown []string
+	for _, s := range pools {
+		nodes, err := a.stackNodes(ctx, d, s)
+		if err != nil {
+			ui.Logf("%s: %v", s.ID, err)
+			continue
+		}
+		if id := firstOnline(nodes); id != "" {
+			online[s.Pool] = id
+			shown = append(shown, s.Pool)
+		}
 	}
-	gwNode := firstOnline(nodes)
-	if gwNode == "" {
-		return dash.Config{}, ui.Errf(ui.ExitAWS, "check `bbctl status "+d.Cfg.Name+"`; nodes need outbound access to SSM through the NAT gateway",
-			"no node of %s is online in SSM", poolStack.ID)
+	if len(shown) == 0 {
+		return dash.Config{}, nil, ui.Errf(ui.ExitAWS, "check `bbctl status "+d.Cfg.Name+"`; nodes need outbound access to SSM through the NAT gateway",
+			"no pool has a node online in SSM")
 	}
-	cfg := dash.Config{
-		Deployment: d.Cfg.Name, Region: d.Cfg.Region, Cluster: d.Cfg.Cluster,
-		Pool: poolStack.Pool, Pools: pools, Nodes: poolNodes,
-	}
-	if cfg.Gateway, err = a.forward(ctx, d, gwNode, gatewayPort); err != nil {
-		return dash.Config{}, err
-	}
-
-	promNode := ""
+	mgmtNode := ""
 	if d.Cfg.Mgmt != nil && d.Cfg.Mgmt.EnableMetrics && mgmtStack != nil {
 		if mn, err := a.stackNodes(ctx, d, *mgmtStack); err == nil {
-			if promNode = firstOnline(mn); promNode != "" {
-				cfg.PoolLabel = poolStack.Pool
+			mgmtNode = firstOnline(mn)
+		}
+	}
+
+	// The forwards, opened together: the cluster API, then one Prometheus
+	// per pool, or mgmt's for all of them.
+	type fwd struct {
+		instance string
+		port     int
+		addr     string
+		err      error
+	}
+	fwds := []*fwd{{instance: online[shown[0]], port: gatewayPort}}
+	promFwd := map[string]*fwd{}
+	for _, p := range shown {
+		switch {
+		case mgmtNode != "":
+			if len(promFwd) == 0 {
+				fwds = append(fwds, &fwd{instance: mgmtNode, port: prometheusPort})
+			}
+			promFwd[p] = fwds[1]
+		case metrics[p]:
+			f := &fwd{instance: online[p], port: prometheusPort}
+			fwds = append(fwds, f)
+			promFwd[p] = f
+		}
+	}
+	var wg sync.WaitGroup
+	for _, f := range fwds {
+		wg.Add(1)
+		go func() { defer wg.Done(); f.addr, f.err = a.forward(ctx, d, f.instance, f.port) }()
+	}
+	wg.Wait()
+	for _, f := range fwds {
+		if f.err != nil {
+			return dash.Config{}, nil, f.err
+		}
+	}
+
+	cfg := dash.Config{
+		Cluster:   d.Cfg.Cluster,
+		Gateway:   fwds[0].addr,
+		LoginHint: "bbctl secrets get " + d.Cfg.Name + " MGX_GW_ADMIN_PASSWD",
+	}
+	for _, p := range shown {
+		dp := dash.Pool{Name: p}
+		if f := promFwd[p]; f != nil {
+			dp.Prometheus = "http://" + f.addr
+			if mgmtNode != "" {
+				dp.Label = p
 			}
 		}
+		cfg.Pools = append(cfg.Pools, dp)
 	}
-	if promNode == "" && metrics {
-		promNode = gwNode
-	}
-	if promNode != "" {
-		addr, err := a.forward(ctx, d, promNode, prometheusPort)
-		if err != nil {
-			return dash.Config{}, err
-		}
-		cfg.Prometheus = "http://" + addr
-	}
-	return cfg, nil
+	return cfg, shown, nil
 }
 
 func (a *app) stackNodes(ctx context.Context, d *deploy.Deployment, s render.Stack) ([]awsx.Node, error) {
@@ -195,7 +237,7 @@ func (a *app) forward(ctx context.Context, d *deploy.Deployment, instance string
 	if err != nil {
 		return "", err
 	}
-	args := []string{"connect", d.Cfg.Name, "--node", instance, "--forward", fmt.Sprintf("%d:%d", local, remotePort)}
+	args := []string{"connect", d.Cfg.Name, "--forward", fmt.Sprintf("%d:%d", local, remotePort)}
 	if a.profile != "" {
 		args = append(args, "--profile", a.profile)
 	}
@@ -204,6 +246,10 @@ func (a *app) forward(ctx context.Context, d *deploy.Deployment, instance string
 		first := true
 		for ctx.Err() == nil {
 			c := exec.CommandContext(ctx, self, args...)
+			// The instance is already known: the child goes straight to the
+			// session, without Terraform, whose working directories another
+			// bbctl may hold.
+			c.Env = append(os.Environ(), forwardInstanceEnv+"="+instance)
 			if ui.Verbose {
 				c.Stdout, c.Stderr = os.Stderr, os.Stderr
 			}

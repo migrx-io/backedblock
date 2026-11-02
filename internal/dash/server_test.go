@@ -1,104 +1,124 @@
 package dash
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
-
-	"github.com/migrx-io/backedblock/internal/awsx"
 )
 
-// fakeGateway serves the parts of mgx-gateway-api the dashboard calls. Each
-// login issues a new token; expire invalidates the current one.
-type fakeGateway struct {
-	logins  atomic.Int32
-	valid   atomic.Value // string
-	cluster string
-}
+// fakeGateway accepts admin/secret for cluster main.
+type fakeGateway struct{}
 
-func (g *fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case r.Method == "POST" && r.URL.Path == "/api/v1/auth":
-		var in map[string]string
-		_ = json.NewDecoder(r.Body).Decode(&in)
-		if in["username"] != "admin" || in["password"] != "secret" || in["cluster"] != g.cluster || in["ns"] != g.cluster {
-			w.WriteHeader(500)
-			fmt.Fprint(w, `{"error":"wrong login or password"}`)
-			return
-		}
-		tok := fmt.Sprintf("tok-%d", g.logins.Add(1))
-		g.valid.Store(tok)
-		fmt.Fprintf(w, `{"access_token":%q}`, tok)
-	case r.Header.Get("Authorization") != "JWT "+g.valid.Load().(string):
-		w.WriteHeader(401)
-		fmt.Fprint(w, `{"msg":"Token has expired"}`)
-	case r.URL.Path == "/api/v1/cluster":
-		fmt.Fprint(w, `[{"cluster":"main","vip_host":{"uuid":"u1","ip":"10.0.1.10","vip":"10.0.1.100"}}]`)
-	case r.URL.Path == "/api/v1/cluster/main/nodes":
-		fmt.Fprint(w, `[{"uuid":"u1","ip":"10.0.1.10","hostname":"node-a","status":"UP"},
-			{"uuid":"u2","ip":"10.0.1.11","hostname":"node-b","status":"DOWN"}]`)
-	default:
-		w.WriteHeader(404)
+func (fakeGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var in map[string]string
+	_ = json.NewDecoder(r.Body).Decode(&in)
+	if r.URL.Path != "/api/v1/auth" || in["username"] != "admin" || in["password"] != "secret" || in["cluster"] != "main" || in["ns"] != "main" {
+		w.WriteHeader(500)
+		fmt.Fprint(w, `{"error":"wrong login or password"}`)
+		return
 	}
+	fmt.Fprint(w, `{"access_token":"tok"}`)
 }
 
-func (g *fakeGateway) expire() { g.valid.Store("expired") }
+// fakeProm is a management plane's Prometheus: two pools' series, each
+// labelled with its pool. A query's pool="x" matcher picks one pool's.
+type fakeProm struct {
+	mu      sync.Mutex
+	queries []string
+}
 
-// fakeProm answers the dashboard's queries and records them.
-type fakeProm struct{ queries []string }
+var poolMatcher = regexp.MustCompile(`pool="([^"]+)"`)
+
+// The pools' nodes: pool1 has a and b, pool2 has c. Node b is DOWN in its
+// cluster, its core is not scraped, and its cache is failing.
+var fakeNodes = []struct{ pool, host, ip, data, uuid, status string }{
+	{"pool1", "node-a", "10.0.1.10", "10.0.2.10", "u1", "UP"},
+	{"pool1", "node-b", "10.0.1.11", "10.0.2.11", "u2", "DOWN"},
+	{"pool2", "node-c", "10.1.1.10", "10.1.2.10", "u3", "UP"},
+}
 
 func (p *fakeProm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("query")
+	p.mu.Lock()
 	p.queries = append(p.queries, q)
-	vec := func(rows ...string) {
-		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[%s]}}`, strings.Join(rows, ","))
+	p.mu.Unlock()
+	want := ""
+	if m := poolMatcher.FindStringSubmatch(q); m != nil {
+		want = m[1]
 	}
-	switch {
-	case r.URL.Path == "/api/v1/query" && strings.HasPrefix(q, "up"):
-		vec(`{"metric":{"job":"core","instance":"10.0.1.10:8082"},"value":[1,"1"]}`,
-			`{"metric":{"job":"cache","instance":"10.0.1.10:8082"},"value":[1,"0"]}`,
-			// Through mgmt federation a node's own target is relabelled.
-			`{"metric":{"job":"core","instance":"localhost:8082","node":"10.0.1.11"},"value":[1,"0"]}`)
-	case r.URL.Path == "/api/v1/query" && strings.HasPrefix(q, "core_cluster_system_cpu"):
-		vec(`{"metric":{"ip":"10.0.1.10","node":"u1"},"value":[1,"12.5"]}`)
-	case r.URL.Path == "/api/v1/query":
-		vec(`{"metric":{"ip":"10.0.1.10","node":"u1"},"value":[1,"40"]}`)
-	case r.URL.Path == "/api/v1/query_range":
+	var rows []string
+	add := func(pool, metric, value string) {
+		if want == "" || want == pool {
+			rows = append(rows, fmt.Sprintf(`{"metric":{%s,"pool":%q},"value":[1,%q]}`, metric, pool, value))
+		}
+	}
+	if r.URL.Path == "/api/v1/query_range" {
 		start := r.URL.Query().Get("start")
-		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[
-			{"metric":{"ip":"10.0.1.11"},"values":[[%s,"5"]]},
-			{"metric":{"ip":"10.0.1.10"},"values":[[%s,"7"]]}]}}`, start, start)
+		for _, n := range fakeNodes {
+			if want == "" || want == n.pool {
+				rows = append(rows, fmt.Sprintf(`{"metric":{"ip":%q,"pool":%q},"values":[[%s,"5"]]}`, n.ip, n.pool, start))
+			}
+		}
+		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[%s]}}`, strings.Join(rows, ","))
+		return
 	}
+	for _, n := range fakeNodes {
+		bad := n.host == "node-b"
+		switch {
+		case strings.HasPrefix(q, "core_cluster_nodes"):
+			add(n.pool, fmt.Sprintf(`"hostname":%q,"ip":%q,"uuid":%q,"status":%q`, n.host, n.ip, n.uuid, n.status), "1")
+		case strings.HasPrefix(q, "up"):
+			add(n.pool, fmt.Sprintf(`"job":"core","instance":"%s:8082"`, n.ip), map[bool]string{true: "0", false: "1"}[bad])
+			add(n.pool, fmt.Sprintf(`"job":"cache","instance":"%s:8082"`, n.ip), "1")
+		case strings.HasPrefix(q, "core_cluster_system_cpu"):
+			add(n.pool, fmt.Sprintf(`"ip":%q`, n.ip), "12.5")
+		case strings.HasPrefix(q, "core_cluster_system_ram"):
+			add(n.pool, fmt.Sprintf(`"ip":%q`, n.ip), "40")
+		case strings.HasPrefix(q, "topk(1, cache_node_status"):
+			add(n.pool, fmt.Sprintf(`"node":%q,"ip":%q,"errors":%q,"attached_mounts":"1","node_disks_count":"10","rw_cache_size_in_mib":"100","r_cache_size_in_mib":"300"`,
+				n.uuid, n.data, map[bool]string{true: "0", false: "1"}[bad]), "1")
+		case strings.HasPrefix(q, "topk(1, cache_raid_member_state"):
+			for _, dev := range []string{"/dev/nvme10n1", "/dev/nvme2n1"} {
+				state, failed := "active sync", "1"
+				if bad && dev == "/dev/nvme2n1" {
+					state, failed = "faulty", "0"
+				}
+				add(n.pool, fmt.Sprintf(`"node":%q,"ip":%q,"raid":"/dev/md/mgx-%s","raid_device":%q,"device_state":%q,"raid_level":"raid0","raid_state":"clean ","raid_state_status":"1","failed_devices":%q,"total_devices":"2"`,
+					n.uuid, n.data, n.uuid, dev, state, failed), "1")
+			}
+		case strings.HasPrefix(q, "topk(1, cache_nvme_mounts"):
+			for _, kind := range []string{"r", "rw"} {
+				add(n.pool, fmt.Sprintf(`"node":%q,"mountpoint":"/mnt/s3cache/%s/%s","device":"/dev/md127","opts":"rw","nvme_mounts_status":%q`,
+					n.uuid, kind, n.uuid, map[bool]string{true: "0", false: "1"}[bad]), "1")
+			}
+		}
+	}
+	fmt.Fprintf(w, `{"status":"success","data":{"resultType":"vector","result":[%s]}}`, strings.Join(rows, ","))
 }
 
-func newTestServer(t *testing.T, poolLabel string) (*httptest.Server, *fakeGateway, *fakeProm) {
-	gw := &fakeGateway{cluster: "main"}
-	gw.valid.Store("")
-	gws := httptest.NewServer(gw)
+// newTestServer serves pool1 and pool2 from one management-plane Prometheus,
+// and pool3 without metrics.
+func newTestServer(t *testing.T) (*httptest.Server, *fakeProm) {
+	gws := httptest.NewServer(fakeGateway{})
 	t.Cleanup(gws.Close)
 	prom := &fakeProm{}
 	ps := httptest.NewServer(prom)
 	t.Cleanup(ps.Close)
 	u, _ := url.Parse(gws.URL)
-	s := New(Config{
-		Deployment: "dev", Region: "us-east-1", Pool: "pool1", Pools: []string{"pool1"}, Cluster: "main",
-		Gateway: u.Host, Prometheus: ps.URL, PoolLabel: poolLabel,
-		Nodes: func(context.Context) ([]awsx.Node, error) {
-			return []awsx.Node{
-				{InstanceID: "i-a", PrivateIP: "10.0.1.10", State: "running", SSM: "Online", Provision: "Success"},
-				{InstanceID: "i-b", PrivateIP: "10.0.1.11", State: "running", SSM: "Online", Provision: "Pending"},
-			}, nil
-		},
-	})
+	s := New(Config{Cluster: "main", Gateway: u.Host, Pools: []Pool{
+		{Name: "pool1", Prometheus: ps.URL, Label: "pool1"},
+		{Name: "pool2", Prometheus: ps.URL, Label: "pool2"},
+		{Name: "pool3"},
+	}})
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
-	return srv, gw, prom
+	return srv, prom
 }
 
 type client struct {
@@ -131,85 +151,138 @@ func (c *client) do(method, path, body string) (int, map[string]any) {
 	return resp.StatusCode, out
 }
 
-func TestLoginAndOverview(t *testing.T) {
-	srv, gw, _ := newTestServer(t, "")
+func login(t *testing.T, srv *httptest.Server) *client {
+	t.Helper()
 	c := &client{t: t, base: srv.URL}
+	if code, out := c.do("POST", "/api/login", `{"username":"admin","password":"secret"}`); code != 200 {
+		t.Fatalf("login: %d %v", code, out)
+	}
+	return c
+}
 
+func TestLogin(t *testing.T) {
+	srv, _ := newTestServer(t)
+	c := &client{t: t, base: srv.URL}
 	if code, _ := c.do("GET", "/api/overview", ""); code != 401 {
 		t.Fatalf("overview before login: %d, want 401", code)
 	}
 	if code, out := c.do("POST", "/api/login", `{"username":"admin","password":"nope"}`); code != 401 || !strings.Contains(out["error"].(string), "wrong login") {
 		t.Fatalf("bad password: %d %v", code, out)
 	}
-	if code, out := c.do("POST", "/api/login", `{"username":"admin","password":"secret"}`); code != 200 {
-		t.Fatalf("login: %d %v", code, out)
+	c = login(t, srv)
+	if code, _ := c.do("GET", "/api/overview", ""); code != 200 {
+		t.Fatalf("after login: %d", code)
 	}
-
-	code, out := c.do("GET", "/api/overview", "")
-	if code != 200 {
-		t.Fatalf("overview: %d %v", code, out)
-	}
-	if out["vip"] != "10.0.1.100" || out["warnings"] != nil {
-		t.Errorf("vip/warnings: %v %v", out["vip"], out["warnings"])
-	}
-	nodes := out["nodes"].([]any)
-	if len(nodes) != 2 {
-		t.Fatalf("nodes: %v", nodes)
-	}
-	a, b := nodes[0].(map[string]any), nodes[1].(map[string]any)
-	if a["hostname"] != "node-a" || a["instance_id"] != "i-a" || a["status"] != "UP" || a["cpu"] != 12.5 || a["ram"] != 40.0 {
-		t.Errorf("node a joined wrong: %v", a)
-	}
-	if s := a["services"].(map[string]any); s["core"] != true || s["cache"] != false {
-		t.Errorf("node a services: %v", s)
-	}
-	if s := b["services"].(map[string]any); b["status"] != "DOWN" || s["core"] != false {
-		t.Errorf("node b (federated, relabelled): %v", b)
-	}
-
-	// An expired gateway token is renewed with the session's login.
-	gw.expire()
-	if code, _ := c.do("GET", "/api/overview", ""); code != 200 || gw.logins.Load() != 2 {
-		t.Errorf("after expiry: %d, logins %d", code, gw.logins.Load())
-	}
-
 	c.do("POST", "/api/logout", "")
 	if code, _ := c.do("GET", "/api/overview", ""); code != 401 {
 		t.Errorf("after logout: %d, want 401", code)
 	}
 }
 
+func TestOverview(t *testing.T) {
+	srv, _ := newTestServer(t)
+	c := login(t, srv)
+
+	_, out := c.do("GET", "/api/overview?pool=pool1", "")
+	nodes := out["nodes"].([]any)
+	if len(nodes) != 2 || out["warnings"] != nil {
+		t.Fatalf("pool1: %v", out)
+	}
+	a, b := nodes[0].(map[string]any), nodes[1].(map[string]any)
+	if a["hostname"] != "node-a" || a["uuid"] != "u1" || a["status"] != "UP" || a["pool"] != "pool1" || a["cpu"] != 12.5 || a["ram"] != 40.0 {
+		t.Errorf("node a: %v", a)
+	}
+	if s := b["services"].(map[string]any); b["status"] != "DOWN" || s["core"] != false || s["cache"] != true {
+		t.Errorf("node b: %v", b)
+	}
+
+	// Every pool: pool1's and pool2's nodes, and a warning for pool3.
+	_, out = c.do("GET", "/api/overview?pool=all", "")
+	if n := len(out["nodes"].([]any)); n != 3 {
+		t.Errorf("all pools: %d nodes, want 3", n)
+	}
+	if w, _ := out["warnings"].([]any); len(w) != 1 || !strings.HasPrefix(w[0].(string), "pool3: no metrics") {
+		t.Errorf("all pools warnings: %v", w)
+	}
+	// Several pools: pool2 and pool3, in the configured order.
+	_, out = c.do("GET", "/api/overview?pool=pool3,pool2", "")
+	if n := out["nodes"].([]any); len(n) != 1 || n[0].(map[string]any)["pool"] != "pool2" {
+		t.Errorf("pool2,pool3: %v", out)
+	}
+	if code, _ := c.do("GET", "/api/overview?pool=pool1,nope", ""); code != 400 {
+		t.Errorf("unknown pool: %d, want 400", code)
+	}
+}
+
 func TestSeries(t *testing.T) {
-	srv, _, prom := newTestServer(t, "pool1")
-	c := &client{t: t, base: srv.URL}
-	c.do("POST", "/api/login", `{"username":"admin","password":"secret"}`)
+	srv, prom := newTestServer(t)
+	c := login(t, srv)
 
 	if code, _ := c.do("GET", "/api/series?metric=up", ""); code != 400 {
 		t.Errorf("unknown metric: %d, want 400", code)
 	}
-	code, out := c.do("GET", "/api/series?metric=cpu&range=900", "")
+	code, out := c.do("GET", "/api/series?metric=cpu&range=900&pool=pool1", "")
 	if code != 200 {
 		t.Fatalf("series: %d %v", code, out)
 	}
-	ts := out["t"].([]any)
-	if len(ts) != 61 { // 900s at the 15s floor, both ends included
+	if ts := out["t"].([]any); len(ts) != 61 { // 900s at the 15s floor, both ends included
 		t.Errorf("points: %d, want 61", len(ts))
 	}
 	lines := out["series"].([]any)
 	first := lines[0].(map[string]any)
-	if first["ip"] != "10.0.1.10" || first["v"].([]any)[0] != 7.0 || first["v"].([]any)[1] != nil {
-		t.Errorf("aligned series: %v", first)
+	if len(lines) != 2 || first["ip"] != "10.0.1.10" || first["pool"] != "pool1" || first["v"].([]any)[0] != 5.0 || first["v"].([]any)[1] != nil {
+		t.Errorf("aligned series: %v", lines)
 	}
-	// Under mgmt every query is limited to the pool.
+	_, out = c.do("GET", "/api/series?metric=ram&pool=all", "")
+	if n := len(out["series"].([]any)); n != 3 {
+		t.Errorf("all pools: %d lines, want 3", n)
+	}
 	for _, q := range prom.queries {
-		if !strings.Contains(q, `pool="pool1"`) {
-			t.Errorf("query without the pool label: %s", q)
+		if !poolMatcher.MatchString(q) {
+			t.Errorf("query without a pool matcher: %s", q)
 		}
 	}
 }
 
+func TestCache(t *testing.T) {
+	srv, _ := newTestServer(t)
+	c := login(t, srv)
+
+	code, out := c.do("GET", "/api/cache?pool=pool1", "")
+	if code != 200 || out["warnings"] != nil {
+		t.Fatalf("cache: %d %v", code, out)
+	}
+	sum := out["summary"].(map[string]any)
+	want := map[string]float64{"nodes_up": 1, "nodes_down": 1, "raids_down": 1, "mounts_down": 1, "disks": 20, "rw_mib": 2000, "r_mib": 6000}
+	for k, v := range want {
+		if sum[k] != v {
+			t.Errorf("summary %s = %v, want %v", k, sum[k], v)
+		}
+	}
+	nodes := out["nodes"].([]any)
+	if n := nodes[0].(map[string]any); n["hostname"] != "node-a" || n["pool"] != "pool1" || n["errors"] != true {
+		t.Errorf("node a (hostname from core_cluster_nodes): %v", n)
+	}
+	raids := out["raids"].([]any)
+	r := raids[0].(map[string]any)
+	if r["ok"] != true || r["members"].([]any)[0].(map[string]any)["device"] != "/dev/nvme2n1" {
+		t.Errorf("raid a (members in device order): %v", r)
+	}
+	if r := raids[1].(map[string]any); r["ok"] != false || r["no_failed"] != false {
+		t.Errorf("raid b should be down: %v", r)
+	}
+	if m := out["mounts"].([]any)[0].(map[string]any); m["kind"] != "rw" || m["ok"] != true {
+		t.Errorf("first mount (rw before r): %v", out["mounts"])
+	}
+
+	_, out = c.do("GET", "/api/cache?pool=all", "")
+	if sum := out["summary"].(map[string]any); sum["nodes_up"] != 2.0 || sum["disks"] != 30.0 {
+		t.Errorf("all pools summary: %v", sum)
+	}
+}
+
 func TestLocalOnly(t *testing.T) {
-	srv, _, _ := newTestServer(t, "")
+	srv, _ := newTestServer(t)
 	req, _ := http.NewRequest("GET", srv.URL+"/api/info", nil)
 	req.Host = "evil.example:8080"
 	resp, err := http.DefaultClient.Do(req)

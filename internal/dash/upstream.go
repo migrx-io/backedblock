@@ -7,19 +7,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
 
-// errUnauthorized means the gateway rejected the token: log in again.
+// errUnauthorized means the browser has no session: log in.
 var errUnauthorized = errors.New("not logged in")
 
-// gateway is the cluster's management API (mgx-gateway-api on :8082).
+// gateway is the cluster's management API (mgx-gateway-api on :8082). The
+// dashboard uses it only to check a login.
 type gateway struct {
 	addr    string // host:port
 	cluster string
@@ -38,7 +37,7 @@ var (
 )
 
 // do sends a request, trying HTTP and then HTTPS until one gets a response.
-func (g *gateway) do(ctx context.Context, method, path, token string, body any) (*http.Response, error) {
+func (g *gateway) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	var raw []byte
 	if body != nil {
 		var err error
@@ -59,11 +58,6 @@ func (g *gateway) do(ctx context.Context, method, path, token string, body any) 
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if token != "" {
-			// The gateway's JWT_HEADER_TYPE (MGX_GW_JWT_HEADER) defaults to "JWT",
-			// which is what mgx-cli sends.
-			req.Header.Set("Authorization", "JWT "+token)
-		}
 		c := plainClient
 		if s == "https" {
 			c = tlsClient
@@ -83,7 +77,7 @@ func (g *gateway) do(ctx context.Context, method, path, token string, body any) 
 
 // login returns a gateway access token for the user.
 func (g *gateway) login(ctx context.Context, user, password string) (string, error) {
-	resp, err := g.do(ctx, http.MethodPost, "/api/v1/auth", "", map[string]string{
+	resp, err := g.do(ctx, http.MethodPost, "/api/v1/auth", map[string]string{
 		"cluster": g.cluster, "ns": g.cluster, "username": user, "password": password,
 	})
 	if err != nil {
@@ -105,43 +99,6 @@ func (g *gateway) login(ctx context.Context, user, password string) (string, err
 		return "", fmt.Errorf("login failed: %s", resp.Status)
 	}
 	return out.AccessToken, nil
-}
-
-// get decodes a GET of path into v.
-func (g *gateway) get(ctx context.Context, token, path string, v any) error {
-	resp, err := g.do(ctx, http.MethodGet, path, token, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	// flask-jwt-extended answers 401 for a missing or expired token and 422
-	// for a malformed one.
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusUnprocessableEntity {
-		return errUnauthorized
-	}
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("cluster API %s: %s %s", path, resp.Status, strings.TrimSpace(string(b)))
-	}
-	return json.NewDecoder(resp.Body).Decode(v)
-}
-
-// clusterInfo is one entry of GET /api/v1/cluster.
-type clusterInfo struct {
-	Cluster string `json:"cluster"`
-	VIPHost struct {
-		UUID string `json:"uuid"`
-		IP   string `json:"ip"`
-		VIP  string `json:"vip"`
-	} `json:"vip_host"`
-}
-
-// clusterNode is one entry of GET /api/v1/cluster/<cluster>/nodes.
-type clusterNode struct {
-	UUID     string `json:"uuid"`
-	IP       string `json:"ip"`
-	Hostname string `json:"hostname"`
-	Status   string `json:"status"` // UP or DOWN
 }
 
 // prometheus is the read-only query API of a node's Prometheus (:9090).

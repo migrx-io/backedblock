@@ -9,8 +9,15 @@
 </head>
 <body>
 <header class="bar">
-  <div class="brand">backedblock.io <span class="sep">/</span> <span id="deployment">…</span></div>
-  <div class="meta" id="meta"></div>
+  <div class="brand">backedblock.io <span class="sep">/</span> <span id="cluster">…</span></div>
+  <nav class="tabs" id="tabs" hidden>
+    <a href="#overview" data-view="overview">Overview</a>
+    <a href="#cache" data-view="cache">Cache</a>
+  </nav>
+  <details class="pool-pick" id="pool-pick" hidden>
+    <summary><span class="k">Pools</span> <span id="pool-label">All</span></summary>
+    <div class="menu" id="pool-menu" role="group" aria-label="Pools"></div>
+  </details>
   <div class="right">
     <span class="updated" id="updated"></span>
     <button class="ghost" id="logout" hidden>Log out</button>
@@ -25,25 +32,68 @@
       <label>Password <input name="password" type="password" autocomplete="current-password" required autofocus></label>
       <p class="error" id="login-error" role="alert"></p>
       <button type="submit">Log in</button>
-      <p class="hint">The admin password: <code id="login-hint">bbctl secrets get NAME MGX_GW_ADMIN_PASSWD</code></p>
+      <p class="hint" id="login-hint-line" hidden>The admin password: <code id="login-hint"></code></p>
     </form>
   </section>
 
   <section id="main-view" hidden>
     <div class="warnings" id="warnings" role="status"></div>
 
+    <div id="view-cache" class="view" hidden>
+      <div class="kpis" id="cache-kpis"></div>
+
+      <div class="card">
+        <div class="card-head"><h2>Cache nodes</h2><span class="sub">IPs are the data-subnet addresses</span></div>
+        <div class="table-wrap">
+          <table class="nodes">
+            <thead><tr>
+              <th class="col-pool">Pool</th><th>Node</th><th>Status</th><th>Mounts</th><th>Error check</th>
+              <th class="num">Disks</th><th class="num">RW cache</th><th class="num">Read cache</th>
+            </tr></thead>
+            <tbody id="cache-nodes"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>RAID</h2><span class="sub">the cache disks of each node, striped</span></div>
+        <div class="table-wrap">
+          <table class="nodes">
+            <thead><tr>
+              <th class="col-pool">Pool</th><th>Node</th><th>Device</th><th>Level</th><th>State</th><th>Failed devices</th><th>Members</th>
+            </tr></thead>
+            <tbody id="cache-raids"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Mounts</h2><span class="sub">read-write and read caches</span></div>
+        <div class="table-wrap">
+          <table class="nodes">
+            <thead><tr>
+              <th class="col-pool">Pool</th><th>Node</th><th>Cache</th><th>Mountpoint</th><th>Device</th><th>Options</th><th>Status</th>
+            </tr></thead>
+            <tbody id="cache-mounts"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-overview" class="view">
+
     <div class="kpis" id="kpis"></div>
 
     <div class="card">
       <div class="card-head">
         <h2>Nodes</h2>
-        <span class="sub" id="cluster-line"></span>
       </div>
       <div class="table-wrap">
         <table class="nodes">
           <thead>
             <tr>
               <th></th>
+              <th class="col-pool">Pool</th>
               <th>Node</th>
               <th>Cluster</th>
               <th>Core</th>
@@ -51,10 +101,7 @@
               <th>Storage</th>
               <th class="num">CPU</th>
               <th class="num">RAM</th>
-              <th>Instance</th>
-              <th>EC2</th>
-              <th>SSM</th>
-              <th>Provisioning</th>
+              <th>UUID</th>
             </tr>
           </thead>
           <tbody id="nodes"></tbody>
@@ -81,6 +128,7 @@
         <div class="card-head"><h2>RAM usage</h2><span class="sub">% per node</span></div>
         <div class="chart" id="chart-ram"></div>
       </div>
+    </div>
     </div>
   </section>
 </main>

@@ -85,11 +85,15 @@ Each of these fixed a real bug or review finding. Keep them.
   closes, so `connect` must do nothing after it. The plugin module has no
   go.mod: its deps live in ours, and `github.com/twinj/uuid` is pinned to a
   pre-v1 pseudo-version that it needs. Don't bump it.
+- **`bbctl ui` shows only what Prometheus holds**, the data behind the
+  mgx-metrics Grafana dashboards; the gateway (:8082) only checks the login.
+  With mgmt, its Prometheus has every pool (filter `pool="x"`); without it,
+  each pool's own. The page sends view and chart names, never PromQL.
 - **`bbctl ui` forwards through child processes.** The Session Manager code
-  ends its process when a session closes, so each port forward (gateway
-  :8082, Prometheus :9090) runs as a child `bbctl connect --forward`, restarted
-  if it drops. The gateway wants `Authorization: JWT <token>`
-  (MGX_GW_JWT_HEADER), not Bearer. The page sends chart names, never PromQL.
+  ends its process when a session closes, so each port forward runs as a
+  child `bbctl connect --forward`, restarted if it drops. The child gets the
+  instance in `BBCTL_FORWARD_INSTANCE` and skips Terraform: concurrent
+  `terraform init`s in one stack dir fail on its local lock.
 - **The management plane is explicit.** It's added by `config create` (asked
   when the workload needs several pools; yes by default, `--mgmt=false` to
   skip) or `pool add --with-mgmt`, never by other commands. Several pools without mgmt is

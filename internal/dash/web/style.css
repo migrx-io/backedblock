@@ -55,6 +55,31 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 }
 .brand { font-weight: 600; }
 .brand .sep { color: var(--muted); font-weight: 400; margin: 0 4px; }
+.tabs { display: flex; gap: 4px; }
+.tabs a {
+  color: var(--ink-2); text-decoration: none; padding: 6px 12px; border-radius: 6px;
+}
+.tabs a:hover { color: var(--ink); background: var(--page); }
+.tabs a[aria-current="page"] { color: var(--ink); font-weight: 600; background: var(--page); }
+.pool-pick { position: relative; }
+.pool-pick summary {
+  list-style: none; cursor: pointer; user-select: none;
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px;
+  background: var(--page); color: var(--ink); white-space: nowrap;
+}
+.pool-pick summary::-webkit-details-marker { display: none; }
+.pool-pick summary::after { content: "▾"; color: var(--muted); margin-left: 6px; }
+.pool-pick summary .k { color: var(--muted); font-size: 12px; }
+.pool-pick .menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 180px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+.pool-pick label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.pool-pick label:hover { background: var(--page); }
+.pool-pick label.all { border-bottom: 1px solid var(--grid); border-radius: 4px 4px 0 0; margin-bottom: 4px; }
+/* The Pool column only shows when more than one pool is on the page. */
+body:not(.multi-pool) .col-pool { display: none; }
 .meta { color: var(--ink-2); display: flex; gap: 16px; flex-wrap: wrap; }
 .meta b { color: var(--ink); font-weight: 500; }
 .right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
@@ -134,6 +159,10 @@ table.nodes { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 .st.bad::before { content: "✕"; color: var(--critical); font-weight: 700; }
 .st.warn::before { content: "▲"; color: var(--warning); }
 .st.none { color: var(--muted); }
+
+details.members summary { cursor: pointer; color: var(--ink-2); }
+details.members ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 12px; }
+.mono { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); }
 
 /* Meter: a value against 100%, track from the same ramp */
 .meter { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
