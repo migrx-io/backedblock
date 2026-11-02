@@ -99,3 +99,55 @@ func httpStatus(err error) int {
 	}
 	return 0
 }
+
+// PurgeState deletes every version of every object under prefix (a
+// deployment's state and lock files), then the bucket itself if nothing else
+// is left in it: another deployment may keep its state in the same bucket.
+// It returns how many object versions it deleted and whether the bucket went.
+func (c *Client) PurgeState(ctx context.Context, bucket, prefix string) (objects int, bucketDeleted bool, err error) {
+	p := s3.NewListObjectVersionsPaginator(c.S3, &s3.ListObjectVersionsInput{Bucket: aws.String(bucket), Prefix: aws.String(prefix)})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			if isNotFound(err) {
+				return objects, false, nil
+			}
+			return objects, false, fmt.Errorf("list s3://%s/%s: %w", bucket, prefix, err)
+		}
+		var ids []types.ObjectIdentifier
+		for _, v := range page.Versions {
+			ids = append(ids, types.ObjectIdentifier{Key: v.Key, VersionId: v.VersionId})
+		}
+		for _, m := range page.DeleteMarkers {
+			ids = append(ids, types.ObjectIdentifier{Key: m.Key, VersionId: m.VersionId})
+		}
+		// A page holds at most 1000 entries, DeleteObjects' limit.
+		if len(ids) == 0 {
+			continue
+		}
+		out, err := c.S3.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(bucket),
+			Delete: &types.Delete{Objects: ids, Quiet: aws.Bool(true)},
+		})
+		if err != nil {
+			return objects, false, fmt.Errorf("delete state in s3://%s/%s: %w", bucket, prefix, err)
+		}
+		if len(out.Errors) > 0 {
+			e := out.Errors[0]
+			return objects, false, fmt.Errorf("delete s3://%s/%s: %s", bucket, aws.ToString(e.Key), aws.ToString(e.Message))
+		}
+		objects += len(ids)
+	}
+
+	rest, err := c.S3.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{Bucket: aws.String(bucket), MaxKeys: aws.Int32(1)})
+	if err != nil {
+		return objects, false, fmt.Errorf("list s3://%s: %w", bucket, err)
+	}
+	if len(rest.Versions) > 0 || len(rest.DeleteMarkers) > 0 {
+		return objects, false, nil
+	}
+	if _, err := c.S3.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)}); err != nil {
+		return objects, false, fmt.Errorf("delete bucket s3://%s: %w", bucket, err)
+	}
+	return objects, true, nil
+}

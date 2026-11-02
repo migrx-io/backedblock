@@ -82,4 +82,6 @@ needs a human at a terminal. Each `exec` result carries `status`,
 
 `bbctl destroy <name> --auto-approve --json` deletes everything, including volume
 data in the pool buckets. Never run it without the human's explicit approval.
-The state bucket and the node secret are kept.
+The state bucket and the node secret are kept; `--purge` deletes them too
+(the bucket only if no other deployment's state is in it). `bbctl secrets
+delete <name> --yes --json` deletes just the secret.

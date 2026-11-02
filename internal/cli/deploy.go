@@ -82,13 +82,19 @@ func (a *app) applyCmd() *cobra.Command {
 
 func (a *app) destroyCmd() *cobra.Command {
 	var stacks []string
-	var yes bool
+	var yes, purge bool
 	cmd := &cobra.Command{
 		Use:   "destroy",
 		Short: "destroy the deployment (mgmt, pools, then network)",
-		Long:  `Destroy tears stacks down in reverse order.`,
+		Long: `Destroy tears stacks down in reverse order. The node secret and the
+Terraform state are kept; --purge deletes them too, once every stack is gone.`,
+		Example: `  bbctl destroy prod
+  bbctl destroy prod --purge`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			if purge && len(stacks) > 0 {
+				return ui.Errf(ui.ExitUsage, "drop --stack: --purge needs every stack destroyed", "--purge and --stack cannot be combined")
+			}
 			d, err := a.open(ctx)
 			if err != nil {
 				return err
@@ -97,20 +103,104 @@ func (a *app) destroyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := d.Prepare(ctx, deploy.BucketRequire); err != nil {
+			// With --purge a missing state bucket is fine: a previous destroy
+			// may have left only the secret behind.
+			mode := deploy.BucketRequire
+			if purge {
+				mode = deploy.BucketIfExists
+			}
+			if err := d.Prepare(ctx, mode); err != nil {
 				return err
 			}
-			res, err := d.Destroy(ctx, only, approver(yes, "destroy"))
+			var res []deploy.StackResult
+			if d.HasState() {
+				if res, err = d.Destroy(ctx, only, approver(yes, "destroy")); err != nil {
+					_ = printResultsOnError(res)
+					return err
+				}
+			}
+			if !purge {
+				return printResults(res)
+			}
+			p, err := purgeDeployment(ctx, d, yes)
 			if err != nil {
 				_ = printResultsOnError(res)
 				return err
 			}
-			return printResults(res)
+			return printDestroy(res, p)
 		},
 	}
 	cmd.Flags().StringSliceVar(&stacks, "stack", nil, "limit to these stacks (network, pool/<name>, mgmt)")
 	cmd.Flags().BoolVar(&yes, "auto-approve", false, "destroy without asking")
+	cmd.Flags().BoolVar(&purge, "purge", false, "also delete the node secret and the Terraform state")
 	return cmd
+}
+
+// purged is what --purge deleted.
+type purged struct {
+	Secret       string `json:"secret"`
+	SecretStatus string `json:"secret_status"` // deleted or absent
+	State        string `json:"state"`
+	StateObjects int    `json:"state_objects"`
+	Bucket       string `json:"bucket"`
+	BucketStatus string `json:"bucket_status"` // deleted, kept (other state is in it) or absent
+}
+
+// purgeDeployment deletes the node secret and the deployment's state, after
+// asking. It runs only after every stack is destroyed. The bucket goes too
+// unless another deployment keeps its state there.
+func purgeDeployment(ctx context.Context, d *deploy.Deployment, yes bool) (purged, error) {
+	cfg := d.Cfg
+	p := purged{Secret: cfg.SecretsSSMPath, State: "s3://" + cfg.State.Bucket + "/" + cfg.Name + "/", Bucket: "s3://" + cfg.State.Bucket}
+	if !yes {
+		if !ui.JSON {
+			fmt.Fprintf(os.Stderr, "\npurge:\n")
+			fmt.Fprintf(os.Stderr, "  %-8s node secret %s\n", "delete", p.Secret)
+			fmt.Fprintf(os.Stderr, "  %-8s Terraform state %s (every version)\n", "delete", p.State)
+			fmt.Fprintf(os.Stderr, "  %-8s bucket %s, if nothing else is in it\n", "delete", p.Bucket)
+		}
+		if err := ui.Confirm("purge "+cfg.Name+"?", "--auto-approve"); err != nil {
+			return p, err
+		}
+	}
+	existed, err := d.AWS.DeleteSecrets(ctx, cfg.SecretsSSMPath)
+	if err != nil {
+		return p, ui.Wrap(ui.ExitAWS, "", err)
+	}
+	p.SecretStatus = "deleted"
+	if !existed {
+		p.SecretStatus = "absent"
+	}
+	p.BucketStatus = "absent"
+	if d.HasState() {
+		deleted := false
+		if p.StateObjects, deleted, err = d.AWS.PurgeState(ctx, cfg.State.Bucket, cfg.Name+"/"); err != nil {
+			return p, ui.Wrap(ui.ExitAWS, "re-run `bbctl destroy "+cfg.Name+" --purge`", err)
+		}
+		p.BucketStatus = map[bool]string{true: "deleted", false: "kept"}[deleted]
+	}
+	return p, nil
+}
+
+func printDestroy(res []deploy.StackResult, p purged) error {
+	out := struct {
+		Stacks []deploy.StackResult `json:"stacks"`
+		Purged purged               `json:"purged"`
+	}{nonNilResults(res), p}
+	return ui.Result(out, func(w io.Writer) {
+		for _, r := range res {
+			line := fmt.Sprintf("%-16s %s", r.ID, r.Status)
+			if r.Reason != "" {
+				line += " — " + r.Reason
+			}
+			fmt.Fprintln(w, line)
+		}
+		fmt.Fprintf(w, "%-16s %s\n", "node secret", map[string]string{"deleted": "deleted", "absent": "already gone"}[p.SecretStatus])
+		fmt.Fprintf(w, "%-16s %d object versions deleted\n", "state", p.StateObjects)
+		fmt.Fprintf(w, "%-16s %s\n", "state bucket", map[string]string{
+			"deleted": "deleted", "kept": "kept: another deployment's state is in it", "absent": "already gone",
+		}[p.BucketStatus])
+	})
 }
 
 func approver(yes bool, verb string) deploy.Approve {

@@ -36,6 +36,9 @@ type Deployment struct {
 	noState bool
 }
 
+// HasState reports whether the state bucket exists, after Prepare.
+func (d *Deployment) HasState() bool { return !d.noState }
+
 // BucketMode says what Prepare does about the Terraform state bucket.
 type BucketMode int
 

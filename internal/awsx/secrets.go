@@ -116,3 +116,17 @@ func (c *Client) PutSecrets(ctx context.Context, path string, s map[string]strin
 	})
 	return err
 }
+
+// DeleteSecrets deletes the SecureString. It reports whether it existed; a
+// missing one is not an error.
+func (c *Client) DeleteSecrets(ctx context.Context, path string) (bool, error) {
+	_, err := c.SSM.DeleteParameter(ctx, &ssm.DeleteParameterInput{Name: aws.String(path)})
+	if err != nil {
+		var nf *types.ParameterNotFound
+		if errors.As(err, &nf) {
+			return false, nil
+		}
+		return false, fmt.Errorf("delete %s: %w", path, err)
+	}
+	return true, nil
+}

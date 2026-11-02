@@ -126,7 +126,7 @@ TF=~/Library/Caches/bbctl/terraform/<ver>/terraform
 ```
 
 `init`, `config create`, `plan` and `status` are read-only in AWS. `apply`,
-`destroy`, `secrets generate|set` and `pool remove` change the account and
+`destroy` (and `--purge`), `secrets generate|set|delete` and `pool remove` change the account and
 cost money. **Ask the user before running them.** To exercise one of those
 paths without creating anything, write a throwaway `_test.go` that swaps in
 a declining approver or a failing S3 client, then delete it.

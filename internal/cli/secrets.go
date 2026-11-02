@@ -19,7 +19,7 @@ func (a *app) secretsCmd() *cobra.Command {
 		Long: `Node secrets live in SSM SecureString at secrets_ssm_path. Nodes fetch it
 while provisioning.`,
 	}
-	cmd.AddCommand(a.secretsGenerateCmd(), a.secretsSetCmd(), a.secretsGetCmd(), a.secretsListCmd())
+	cmd.AddCommand(a.secretsGenerateCmd(), a.secretsSetCmd(), a.secretsGetCmd(), a.secretsListCmd(), a.secretsDeleteCmd())
 	return cmd
 }
 
@@ -190,4 +190,48 @@ func validKey(k string) bool {
 		}
 	}
 	return false
+}
+
+func (a *app) secretsDeleteCmd() *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "delete the node secret from SSM",
+		Long: `Delete removes the node secret from SSM. Nodes already provisioned keep
+running, but none can be provisioned without it: the next apply creates a new
+secret with new values, which the running nodes do not have.`,
+		Example: "  bbctl secrets delete prod --yes",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := a.load()
+			if err != nil {
+				return err
+			}
+			c, err := awsx.New(cmd.Context(), cfg.Region, a.profile)
+			if err != nil {
+				return ui.Wrap(ui.ExitAWS, "", err)
+			}
+			if !yes {
+				if err := ui.Confirm("Delete the node secret "+cfg.SecretsSSMPath+"?", "--yes"); err != nil {
+					return err
+				}
+			}
+			existed, err := c.DeleteSecrets(cmd.Context(), cfg.SecretsSSMPath)
+			if err != nil {
+				return ui.Wrap(ui.ExitAWS, "", err)
+			}
+			status := "deleted"
+			if !existed {
+				status = "absent"
+			}
+			return ui.Result(map[string]string{"path": cfg.SecretsSSMPath, "status": status}, func(w io.Writer) {
+				if existed {
+					fmt.Fprintf(w, "deleted %s\n", cfg.SecretsSSMPath)
+				} else {
+					fmt.Fprintf(w, "%s does not exist\n", cfg.SecretsSSMPath)
+				}
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete without asking")
+	return cmd
 }

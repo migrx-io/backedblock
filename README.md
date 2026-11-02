@@ -251,13 +251,13 @@ Commands:
 | `bbctl config create\|list\|delete` | create, list or delete storage configs |
 | `bbctl plan NAME` | preview what `apply` would change |
 | `bbctl apply NAME` | create or update the deployment |
-| `bbctl destroy NAME` | tear it down in reverse order (mgmt, pools, network) |
+| `bbctl destroy NAME [--purge]` | tear it down in reverse order (mgmt, pools, network); `--purge` also deletes the node secret and the Terraform state |
 | `bbctl status NAME [--wait]` | each stack's outputs and its nodes' EC2, SSM and provisioning state |
 | `bbctl pool add\|remove NAME POOL`, `bbctl pool list NAME` | add, remove or list the pools in a config |
 | `bbctl exec NAME [--all] -- CMD` | run a shell command on nodes via SSM Run Command; returns its output and exit code |
 | `bbctl connect NAME [--forward [LOCAL:]REMOTE]` | interactive shell or port forward via Session Manager, built in |
 | `bbctl ui NAME [--pool POOL]` | a dashboard in the browser with the data of the Grafana dashboards (nodes, health, CPU, RAM, cache), filtered by pool |
-| `bbctl secrets get\|list\|set\|generate NAME` | the node secrets in SSM, e.g. `get NAME MGX_GW_ADMIN_PASSWD` for `mgx-cli` |
+| `bbctl secrets get\|list\|set\|generate\|delete NAME` | the node secrets in SSM, e.g. `get NAME MGX_GW_ADMIN_PASSWD` for `mgx-cli` |
 | `bbctl version` | bbctl, Terraform and module versions |
 
 **Scripts and agents:** every command takes `--json`. The result goes to
