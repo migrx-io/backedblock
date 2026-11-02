@@ -11,8 +11,9 @@
 <header class="bar">
   <div class="brand">backedblock.io <span class="sep">/</span> <span id="cluster">…</span></div>
   <nav class="tabs" id="tabs" hidden>
-    <a href="#overview" data-view="overview">Overview</a>
+    <a href="#hosts" data-view="hosts">Hosts</a>
     <a href="#cache" data-view="cache">Cache</a>
+    <a href="#storage" data-view="storage">Storage</a>
   </nav>
   <details class="pool-pick" id="pool-pick" hidden>
     <summary><span class="k">Pools</span> <span id="pool-label">All</span></summary>
@@ -80,55 +81,281 @@
       </div>
     </div>
 
-    <div id="view-overview" class="view">
+    <div id="view-storage" class="view" hidden>
+      <div class="kpis" id="storage-kpis"></div>
 
-    <div class="kpis" id="kpis"></div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2>Nodes</h2>
+      <div class="card">
+        <div class="card-head"><h2>Volumes</h2></div>
+        <div class="table-wrap">
+          <table class="nodes">
+            <thead><tr>
+              <th></th><th class="col-pool">Pool</th><th>Volume</th><th>Status</th>
+              <th class="num">Size</th><th class="num">RW cache</th><th class="num">Read cache</th><th>Node</th><th>Bucket</th>
+            </tr></thead>
+            <tbody id="volumes"></tbody>
+          </table>
+        </div>
       </div>
-      <div class="table-wrap">
-        <table class="nodes">
-          <thead>
-            <tr>
-              <th></th>
-              <th class="col-pool">Pool</th>
-              <th>Node</th>
-              <th>Cluster</th>
-              <th>Core</th>
-              <th>Cache</th>
-              <th>Storage</th>
-              <th class="num">CPU</th>
-              <th class="num">RAM</th>
-              <th>UUID</th>
-            </tr>
-          </thead>
-          <tbody id="nodes"></tbody>
-        </table>
-      </div>
-    </div>
 
-    <div class="filters" id="filters">
-      <span class="label">Range</span>
+      <div class="filters">
+        <span class="label">Range</span>
       <div class="seg" role="radiogroup" aria-label="Time range">
         <button role="radio" data-range="900">15m</button>
         <button role="radio" data-range="3600" aria-checked="true">1h</button>
         <button role="radio" data-range="21600">6h</button>
         <button role="radio" data-range="86400">24h</button>
       </div>
+      </div>
+
+      <div class="charts">
+        <div class="card chart-card">
+          <div class="card-head"><h2>Read throughput</h2><span class="sub">MiB/s per volume</span></div>
+          <div class="chart" id="chart-read_mbps"></div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-head"><h2>Write throughput</h2><span class="sub">MiB/s per volume</span></div>
+          <div class="chart" id="chart-write_mbps"></div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-head"><h2>Read IOPS</h2><span class="sub">operations/s per volume</span></div>
+          <div class="chart" id="chart-read_iops"></div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-head"><h2>Write IOPS</h2><span class="sub">operations/s per volume</span></div>
+          <div class="chart" id="chart-write_iops"></div>
+        </div>
+      </div>
     </div>
 
-    <div class="charts" id="charts">
-      <div class="card chart-card">
-        <div class="card-head"><h2>CPU usage</h2><span class="sub">% per node</span></div>
-        <div class="chart" id="chart-cpu"></div>
+    <div id="view-hosts" class="view">
+      <div class="kpis" id="kpis"></div>
+
+      <div class="card">
+        <div class="card-head"><h2>Hosts</h2><span class="sub">select a row to see its host below</span></div>
+        <div class="table-wrap">
+          <table class="nodes" id="hosts-table">
+            <thead><tr>
+              <th></th><th class="col-pool">Pool</th><th>Host</th><th>Cluster</th><th>Core</th><th>Cache</th><th>Storage</th>
+              <th class="num">CPU</th><th class="num">RAM</th><th class="num">Root disk</th><th class="num">Load 1m</th>
+              <th class="num">Disk read / write</th><th class="num">Net in / out</th><th class="num">Dirty</th>
+              <th class="num">Pressure cpu / mem / io</th>
+            </tr></thead>
+            <tbody id="nodes"></tbody>
+          </table>
+        </div>
       </div>
-      <div class="card chart-card">
-        <div class="card-head"><h2>RAM usage</h2><span class="sub">% per node</span></div>
-        <div class="chart" id="chart-ram"></div>
+
+      <div class="filters">
+        <span class="label">Range</span>
+        <div class="seg" role="radiogroup" aria-label="Time range">
+          <button role="radio" data-range="900">15m</button>
+          <button role="radio" data-range="3600" aria-checked="true">1h</button>
+          <button role="radio" data-range="21600">6h</button>
+          <button role="radio" data-range="86400">24h</button>
+        </div>
       </div>
-    </div>
+
+      <div class="charts">
+          <div class="card chart-card">
+            <div class="card-head"><h2>CPU usage</h2><span class="sub">% per host</span></div>
+            <div class="chart" id="chart-host_cpu"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>RAM usage</h2><span class="sub">% per host</span></div>
+            <div class="chart" id="chart-host_ram"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Disk read</h2><span class="sub">MiB/s per host, physical disks</span></div>
+            <div class="chart" id="chart-host_disk_read"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Disk write</h2><span class="sub">MiB/s per host, physical disks</span></div>
+            <div class="chart" id="chart-host_disk_write"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Network received</h2><span class="sub">MiB/s per host</span></div>
+            <div class="chart" id="chart-host_net_rx"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Network sent</h2><span class="sub">MiB/s per host</span></div>
+            <div class="chart" id="chart-host_net_tx"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Dirty pages</h2><span class="sub">MiB per host, waiting to be written</span></div>
+            <div class="chart" id="chart-host_dirty"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>CPU pressure</h2><span class="sub">% of time tasks waited for CPU</span></div>
+            <div class="chart" id="chart-host_psi_cpu"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Memory pressure</h2><span class="sub">% of time tasks waited for memory</span></div>
+            <div class="chart" id="chart-host_psi_memory"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>IO pressure</h2><span class="sub">% of time tasks waited for IO</span></div>
+            <div class="chart" id="chart-host_psi_io"></div>
+          </div>
+      </div>
+
+      <div class="host-head">
+        <h2>Host</h2>
+        <select id="host-pick" aria-label="Host"></select>
+        <span class="sub" id="host-sub"></span>
+      </div>
+
+      <details class="row" data-row="quick" open>
+        <summary>Quick CPU / Mem / Disk</summary>
+        <div class="kpis" id="host-quick"></div>
+      </details>
+      <details class="row" data-row="basic" open>
+        <summary>Basic CPU / Mem / Net / Disk</summary>
+        <div class="charts">
+          <div class="card chart-card">
+            <div class="card-head"><h2>CPU basic</h2><span class="sub">% of all CPUs</span></div>
+            <div class="chart" id="chart-hp-cpu_basic"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Memory basic</h2><span class="sub">bytes</span></div>
+            <div class="chart" id="chart-hp-mem_basic"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Network traffic</h2><span class="sub">bits/s per interface</span></div>
+            <div class="chart" id="chart-hp-net_basic"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Disk space used</h2><span class="sub">% per filesystem</span></div>
+            <div class="chart" id="chart-hp-disk_space_basic"></div>
+          </div>
+        </div>
+      </details>
+      <details class="row" data-row="full">
+        <summary>CPU / Memory / Net / Disk</summary>
+        <div class="charts">
+          <div class="card chart-card">
+            <div class="card-head"><h2>CPU</h2><span class="sub">% of all CPUs, by mode</span></div>
+            <div class="chart" id="chart-hp-cpu"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Memory</h2><span class="sub">bytes, by use</span></div>
+            <div class="chart" id="chart-hp-memory"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Network saturation</h2><span class="sub">% of link speed</span></div>
+            <div class="chart" id="chart-hp-net_saturation"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Disk IOps</h2><span class="sub">per device</span></div>
+            <div class="chart" id="chart-hp-disk_iops"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Disk throughput</h2><span class="sub">per device</span></div>
+            <div class="chart" id="chart-hp-disk_throughput"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Disk IO utilization</h2><span class="sub">% of time busy, per device</span></div>
+            <div class="chart" id="chart-hp-disk_util"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Filesystem space available</h2><span class="sub">per filesystem</span></div>
+            <div class="chart" id="chart-hp-fs_avail"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Filesystem used</h2><span class="sub">per filesystem</span></div>
+            <div class="chart" id="chart-hp-fs_used"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Pressure stall information</h2><span class="sub">% of time tasks waited</span></div>
+            <div class="chart" id="chart-hp-psi"></div>
+          </div>
+        </div>
+      </details>
+      <details class="row" data-row="meminfo">
+        <summary>Memory Meminfo</summary>
+        <div class="charts">
+          <div class="card chart-card">
+            <div class="card-head"><h2>Memory committed</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_committed"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Writeback and dirty</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_dirty"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Slab</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_slab"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Shared and mapped</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_shared"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>LRU active / inactive</h2><span class="sub">% of RAM</span></div>
+            <div class="chart" id="chart-hp-mem_lru"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>LRU detail</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_lru_detail"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Kernel / CPU / IO</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_kernel"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Vmalloc</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_vmalloc"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Anonymous</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_anon"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Unevictable and mlocked</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_unevictable"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>DirectMap</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_directmap"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>HugePages</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-hp-mem_hugepages"></div>
+          </div>
+        </div>
+      </details>
+      <details class="row" data-row="disk">
+        <summary>Storage Disk</summary>
+        <div class="charts">
+          <div class="card chart-card">
+            <div class="card-head"><h2>Average wait time</h2><span class="sub">per IO, per device</span></div>
+            <div class="chart" id="chart-hp-disk_wait"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Average queue size</h2><span class="sub">per device</span></div>
+            <div class="chart" id="chart-hp-disk_queue"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Merged reads / writes</h2><span class="sub">per device</span></div>
+            <div class="chart" id="chart-hp-disk_merged"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Time spent doing IO</h2><span class="sub">% of time, per device</span></div>
+            <div class="chart" id="chart-hp-disk_time"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Discards / flush</h2><span class="sub">per device</span></div>
+            <div class="chart" id="chart-hp-disk_discards"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Sectors discarded</h2><span class="sub">per second, per device</span></div>
+            <div class="chart" id="chart-hp-disk_discarded_sectors"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>IOs in progress</h2><span class="sub">per device</span></div>
+            <div class="chart" id="chart-hp-disk_io_now"></div>
+          </div>
+        </div>
+      </details>
     </div>
   </section>
 </main>

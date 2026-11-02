@@ -248,7 +248,7 @@ type StackStatus struct {
 	Nodes   []awsx.Node    `json:"nodes,omitempty"`
 }
 
-func (d *Deployment) Status(ctx context.Context) ([]StackStatus, error) {
+func (d *Deployment) Status(ctx context.Context, step func()) ([]StackStatus, error) {
 	var res []StackStatus
 	for _, s := range d.Stacks {
 		st := StackStatus{ID: s.ID}
@@ -270,6 +270,9 @@ func (d *Deployment) Status(ctx context.Context) ([]StackStatus, error) {
 			}
 		}
 		res = append(res, st)
+		if step != nil {
+			step()
+		}
 	}
 	return res, nil
 }

@@ -37,7 +37,9 @@ SSM agent status and the status of its provisioning run.`,
 			if err := d.Prepare(ctx, deploy.BucketRequire); err != nil {
 				return err
 			}
-			st, err := d.Status(ctx)
+			bar := ui.Begin(d.Cfg.Name, "reading", len(d.Stacks))
+			st, err := d.Status(ctx, bar.Step)
+			bar.End("", err == nil)
 			if err != nil {
 				return err
 			}
@@ -71,9 +73,18 @@ SSM agent status and the status of its provisioning run.`,
 
 // waitProvisioned polls Status until every node is provisioned, one fails, or
 // the timeout passes.
-func waitProvisioned(ctx context.Context, d *deploy.Deployment, st []deploy.StackStatus, timeout time.Duration) ([]deploy.StackStatus, error) {
+func waitProvisioned(ctx context.Context, d *deploy.Deployment, st []deploy.StackStatus, timeout time.Duration) (_ []deploy.StackStatus, err error) {
 	deadline := time.Now().Add(timeout)
+	bar := ui.Begin(d.Cfg.Name, "provisioning", countNodes(st))
+	defer func() {
+		if err != nil {
+			bar.End("not provisioned", false)
+		} else {
+			bar.End("provisioned", true)
+		}
+	}()
 	for {
+		bar.Set(countProvisioned(st), countNodes(st))
 		for _, s := range st {
 			for _, n := range s.Nodes {
 				if n.ProvisionFailed() {
@@ -98,8 +109,7 @@ func waitProvisioned(ctx context.Context, d *deploy.Deployment, st []deploy.Stac
 			return st, ctx.Err()
 		case <-time.After(15 * time.Second):
 		}
-		var err error
-		if st, err = d.Status(ctx); err != nil {
+		if st, err = d.Status(ctx, nil); err != nil {
 			return st, err
 		}
 	}

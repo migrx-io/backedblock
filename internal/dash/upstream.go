@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -146,8 +147,9 @@ func parseValue(v [2]any) (float64, float64, bool) {
 	if !ok || !ok2 {
 		return 0, 0, false
 	}
+	// NaN and ±Inf (a 0/0 ratio, say) are dropped: JSON cannot carry them.
 	f, err := strconv.ParseFloat(s, 64)
-	return t, f, err == nil
+	return t, f, err == nil && !math.IsNaN(f) && !math.IsInf(f, 0)
 }
 
 // query evaluates an instant vector expression.

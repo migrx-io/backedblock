@@ -91,6 +91,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/overview", s.authed(s.overview))
 	mux.HandleFunc("GET /api/series", s.authed(s.series))
 	mux.HandleFunc("GET /api/cache", s.authed(s.cache))
+	mux.HandleFunc("GET /api/storage", s.authed(s.storage))
+	mux.HandleFunc("GET /api/host/quick", s.authed(s.hostQuick))
+	mux.HandleFunc("GET /api/host/series", s.authed(s.hostSeries))
 	return localOnly(mux)
 }
 
@@ -261,11 +264,14 @@ type NodeView struct {
 	// Services maps core, cache and storage to whether Prometheus could
 	// scrape them.
 	Services map[string]bool `json:"services,omitempty"`
-	CPU      *float64        `json:"cpu,omitempty"`
-	RAM      *float64        `json:"ram,omitempty"`
+	// Kernel and Values are the node's node_exporter readings: Values maps
+	// each hostQueries column but uname to its value.
+	Kernel string             `json:"kernel,omitempty"`
+	Values map[string]float64 `json:"values,omitempty"`
 }
 
-// Overview is the main view: the mgx-metrics "Core" dashboard.
+// Overview is the Hosts view: the mgx-metrics "Core" dashboard's node health
+// with each node's node_exporter readings.
 type Overview struct {
 	Cluster string     `json:"cluster"`
 	Pools   []string   `json:"pools"`
@@ -297,15 +303,16 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 
 // overview is the pool's node rows. Each node publishes its own
 // core_cluster_nodes series (hostname, ip, uuid, status), so the rows are
-// those, ordered by hostname, then any node only `up` knows: one that stopped
-// reporting.
+// those, ordered by hostname, then any node only `up` or node_exporter
+// knows: one that stopped reporting.
 func (p *pool) overview(ctx context.Context) ([]NodeView, error) {
 	if p.prom == nil {
 		return nil, errNoMetrics
 	}
 	sel := p.selector()
-	var members, up, cpu, ram []sample
-	var errs [4]error
+	var members, up []sample
+	var hosts []Host
+	var errs [3]error
 	var wg sync.WaitGroup
 	for i, q := range []struct {
 		dst  *[]sample
@@ -313,12 +320,12 @@ func (p *pool) overview(ctx context.Context) ([]NodeView, error) {
 	}{
 		{&members, "core_cluster_nodes{" + sel + "}"},
 		{&up, "up{" + matchers(`job=~"core|cache|storage"`, sel) + "}"},
-		{&cpu, "core_cluster_system_cpu{" + sel + "}"},
-		{&ram, "core_cluster_system_ram{" + sel + "}"},
 	} {
 		wg.Add(1)
 		go func() { defer wg.Done(); *q.dst, errs[i] = p.prom.query(ctx, q.expr) }()
 	}
+	wg.Add(1)
+	go func() { defer wg.Done(); hosts, errs[2] = p.hosts(ctx) }()
 	wg.Wait()
 	if err := errors.Join(errs[:]...); err != nil {
 		return nil, err
@@ -354,16 +361,11 @@ func (p *pool) overview(ctx context.Context) ([]NodeView, error) {
 		}
 		v.Services[smp.Labels["job"]] = smp.Value == 1
 	}
-	for _, smp := range cpu {
-		if ip := smp.Labels["ip"]; ip != "" {
-			val := smp.Value
-			row(ip).CPU = &val
-		}
-	}
-	for _, smp := range ram {
-		if ip := smp.Labels["ip"]; ip != "" {
-			val := smp.Value
-			row(ip).RAM = &val
+	for _, h := range hosts {
+		v := row(h.IP)
+		v.Kernel, v.Values = h.Kernel, h.Values
+		if v.Hostname == "" {
+			v.Hostname = h.Hostname
 		}
 	}
 	rows := make([]NodeView, 0, len(order))
@@ -403,24 +405,52 @@ func scrapedHost(l map[string]string) string {
 	return host
 }
 
+// chart is a query, expanded by expand, and what names each line: "ip" (a
+// core series' node), "name" (a volume) or "host" (a node_exporter target,
+// read by scrapedHost).
+type chart struct{ expr, by string }
+
 // charts are the series the page may ask for, by name: the page never sends
-// PromQL, so the API cannot be used to run arbitrary queries.
-var charts = map[string]string{
-	"cpu": "core_cluster_system_cpu",
-	"ram": "core_cluster_system_ram",
+// PromQL, so the API cannot be used to run arbitrary queries. The volume
+// counters are per-scrape deltas, so dividing by the 15s scrape interval gives
+// a rate; summing by name keeps a volume that moved to another node one line.
+var charts = map[string]chart{
+	"read_mbps":  {"sum by(name) (spdk_volume_bytes_read{{sel}}) / 1048576 / 15", "name"},
+	"write_mbps": {"sum by(name) (spdk_volume_bytes_written{{sel}}) / 1048576 / 15", "name"},
+	"read_iops":  {"sum by(name) (spdk_volume_num_read_ops{{sel}}) / 15", "name"},
+	"write_iops": {"sum by(name) (spdk_volume_num_write_ops{{sel}}) / 15", "name"},
+
+	"host_cpu":        {hostQueries["cpu"], "host"},
+	"host_ram":        {hostQueries["ram"], "host"},
+	"host_disk_read":  {hostQueries["disk_read"] + " / 1048576", "host"},
+	"host_disk_write": {hostQueries["disk_write"] + " / 1048576", "host"},
+	"host_net_rx":     {hostQueries["net_rx"] + " / 1048576", "host"},
+	"host_net_tx":     {hostQueries["net_tx"] + " / 1048576", "host"},
+	"host_dirty":      {hostQueries["dirty"] + " / 1048576", "host"},
+	"host_psi_cpu":    {hostQueries["psi_cpu"], "host"},
+	"host_psi_memory": {hostQueries["psi_memory"], "host"},
+	"host_psi_io":     {hostQueries["psi_io"], "host"},
 }
 
 // Series is one chart's data, aligned for uPlot: one shared time axis and a
 // value (or null) per series at each time.
 type Series struct {
-	Times    []int64    `json:"t"`
-	Series   []NodeLine `json:"series"`
-	Warnings []string   `json:"warnings,omitempty"`
+	Times  []int64 `json:"t"`
+	Series []Line  `json:"series"`
+	// Unit is a host panel's unit (see panel), for the page to print values;
+	// Zero counts its lines left out for staying at zero.
+	Unit     string   `json:"unit,omitempty"`
+	Zero     int      `json:"zero,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
-type NodeLine struct {
+// Line is a node's (IP set), a volume's (Volume set) or a host panel's
+// (Label set) series.
+type Line struct {
 	Pool   string     `json:"pool"`
-	IP     string     `json:"ip"`
+	IP     string     `json:"ip,omitempty"`
+	Volume string     `json:"volume,omitempty"`
+	Label  string     `json:"label,omitempty"`
 	Values []*float64 `json:"v"`
 }
 
@@ -430,19 +460,12 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	metric, ok := charts[r.URL.Query().Get("metric")]
+	c, ok := charts[r.URL.Query().Get("metric")]
 	if !ok {
 		writeError(w, http.StatusBadRequest, errors.New("unknown metric"))
 		return
 	}
-	rng, err := strconv.Atoi(r.URL.Query().Get("range"))
-	if err != nil || rng < 60 || rng > 7*24*3600 {
-		rng = 3600
-	}
-	end := time.Now().Truncate(time.Second)
-	start := end.Add(-time.Duration(rng) * time.Second)
-	// About 300 points per chart, never finer than the 15s scrape interval.
-	step := max(time.Duration(rng)*time.Second/300, 15*time.Second).Truncate(time.Second)
+	start, end, step := window(r)
 
 	res := make([][]series, len(pools))
 	errs := make([]error, len(pools))
@@ -451,7 +474,9 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 			errs[i] = errNoMetrics
 			return
 		}
-		res[i], errs[i] = p.prom.queryRange(r.Context(), metric+"{"+p.selector()+"}", start, end, step)
+		// A rate needs at least four scrapes, and must span the step so no
+		// sample falls between points.
+		res[i], errs[i] = p.prom.queryRange(r.Context(), expand(c.expr, p.selector(), max(step, time.Minute)), start, end, step)
 	})
 	out := grid(start, end, step)
 	for i, p := range pools {
@@ -459,35 +484,71 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 			out.Warnings = append(out.Warnings, s.warn(p, errs[i]))
 			continue
 		}
-		out.add(p.name, res[i])
+		out.add(p.name, c.by, res[i])
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
+// window is a chart's time range from ?range= (seconds, an hour by default)
+// and its step: about 300 points, never finer than the 15s scrape interval.
+func window(r *http.Request) (start, end time.Time, step time.Duration) {
+	rng, err := strconv.Atoi(r.URL.Query().Get("range"))
+	if err != nil || rng < 60 || rng > 7*24*3600 {
+		rng = 3600
+	}
+	end = time.Now().Truncate(time.Second)
+	start = end.Add(-time.Duration(rng) * time.Second)
+	step = max(time.Duration(rng)*time.Second/300, 15*time.Second).Truncate(time.Second)
+	return start, end, step
+}
+
 // grid is an empty chart on the time grid start + k*step.
 func grid(start, end time.Time, step time.Duration) *Series {
-	out := &Series{Series: []NodeLine{}}
+	out := &Series{Series: []Line{}}
 	for t := start.Unix(); t <= end.Unix(); t += int64(step.Seconds()) {
 		out.Times = append(out.Times, t)
 	}
 	return out
 }
 
-// add puts a pool's series on the chart's grid, ordered by IP.
-func (out *Series) add(poolName string, res []series) {
-	idx := make(map[int64]int, len(out.Times))
-	for i, t := range out.Times {
-		idx[t] = i
+// add puts a pool's series on the chart's grid, ordered by the label that
+// names them.
+func (out *Series) add(poolName, by string, res []series) {
+	key := func(l map[string]string) string {
+		switch by {
+		case "host":
+			return scrapedHost(l)
+		case "name":
+			return l["name"]
+		}
+		return l["ip"]
 	}
-	sort.Slice(res, func(i, j int) bool { return res[i].Labels["ip"] < res[j].Labels["ip"] })
+	sort.Slice(res, func(i, j int) bool { return key(res[i].Labels) < key(res[j].Labels) })
 	for _, sr := range res {
-		line := NodeLine{Pool: poolName, IP: sr.Labels["ip"], Values: make([]*float64, len(out.Times))}
-		for _, pt := range sr.Points {
-			if i, ok := idx[int64(pt[0])]; ok {
+		line := Line{Pool: poolName}
+		if by == "name" {
+			line.Volume = key(sr.Labels)
+		} else if line.IP = key(sr.Labels); line.IP == "" {
+			continue
+		}
+		out.addLine(line, sr)
+	}
+}
+
+// addLine puts one series on the chart's grid as line.
+func (out *Series) addLine(line Line, sr series) {
+	line.Values = make([]*float64, len(out.Times))
+	step := int64(1)
+	if len(out.Times) > 1 {
+		step = out.Times[1] - out.Times[0]
+	}
+	for _, pt := range sr.Points {
+		if t := int64(pt[0]); len(out.Times) > 0 && (t-out.Times[0])%step == 0 {
+			if i := int((t - out.Times[0]) / step); i >= 0 && i < len(out.Times) {
 				v := pt[1]
 				line.Values[i] = &v
 			}
 		}
-		out.Series = append(out.Series, line)
 	}
+	out.Series = append(out.Series, line)
 }

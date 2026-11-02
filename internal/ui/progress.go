@@ -87,6 +87,17 @@ func (s *Status) Step() {
 	s.mu.Unlock()
 }
 
+// Set replaces the progress, for work whose total can change, such as nodes
+// that are still being listed.
+func (s *Status) Set(done, total int) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.done, s.total = done, total
+	s.mu.Unlock()
+}
+
 // End stops the status line. With a non-empty verb the line is kept, e.g.
 // "✓ network applied ..."; otherwise it is erased. ok picks the mark.
 func (s *Status) End(verb string, ok bool) {
