@@ -11,13 +11,23 @@
 <header class="bar">
   <div class="brand">backedblock.io <span class="sep">/</span> <span id="cluster">…</span></div>
   <nav class="tabs" id="tabs" hidden>
+    <a href="#overview" data-view="overview">Overview</a>
     <a href="#hosts" data-view="hosts">Hosts</a>
     <a href="#cache" data-view="cache">Cache</a>
-    <a href="#storage" data-view="storage">Storage</a>
+    <a href="#volumes" data-view="volumes">Volumes</a>
+    <a href="#snapshots" data-view="snapshots">Snapshots</a>
   </nav>
   <details class="pool-pick" id="pool-pick" hidden>
     <summary><span class="k">Pools</span> <span id="pool-label">All</span></summary>
     <div class="menu" id="pool-menu" role="group" aria-label="Pools"></div>
+  </details>
+  <label class="node-pick" id="node-pick" hidden>
+    <span class="k">Node</span>
+    <select id="host-pick"></select>
+  </label>
+  <details class="pool-pick" id="pick" hidden>
+    <summary><span class="k" id="pick-title">Hosts</span> <span id="pick-label">All</span></summary>
+    <div class="menu" id="pick-menu" role="group"></div>
   </details>
   <div class="right">
     <span class="updated" id="updated"></span>
@@ -81,7 +91,7 @@
       </div>
     </div>
 
-    <div id="view-storage" class="view" hidden>
+    <div id="view-volumes" class="view" hidden>
       <div class="kpis" id="storage-kpis"></div>
 
       <div class="card">
@@ -99,48 +109,195 @@
 
       <div class="filters">
         <span class="label">Range</span>
-      <div class="seg" role="radiogroup" aria-label="Time range">
-        <button role="radio" data-range="900">15m</button>
-        <button role="radio" data-range="3600" aria-checked="true">1h</button>
-        <button role="radio" data-range="21600">6h</button>
-        <button role="radio" data-range="86400">24h</button>
-      </div>
+        <div class="seg" role="radiogroup" aria-label="Time range">
+          <button role="radio" data-range="900">15m</button>
+          <button role="radio" data-range="3600" aria-checked="true">1h</button>
+          <button role="radio" data-range="21600">6h</button>
+          <button role="radio" data-range="86400">24h</button>
+        </div>
       </div>
 
-      <div class="charts">
-        <div class="card chart-card">
-          <div class="card-head"><h2>Read throughput</h2><span class="sub">MiB/s per volume</span></div>
-          <div class="chart" id="chart-read_mbps"></div>
+      <details class="row" data-row="cache">
+        <summary>Cache</summary>
+        <div class="charts">
+          <div class="card chart-card">
+            <div class="card-head"><h2>cgroup memory</h2><span class="sub">fs cache, anon and limits</span></div>
+            <div class="chart" id="chart-vp-cgroup_memory"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>cgroup dirty and writeback</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-cgroup_memory_dirty"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Write cache allocated</h2><span class="sub">and its size</span></div>
+            <div class="chart" id="chart-vp-cache_write_allocated"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Read cache allocated</h2><span class="sub">and its size</span></div>
+            <div class="chart" id="chart-vp-cache_read_allocated"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Memory RSS</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-memory_rss"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Threads running</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-threads_running"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Threads in IO wait</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-threads_iowait"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Block cache read hits</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-block_read_hits"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Block cache read misses</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-block_read_misses"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Block cache read hit ratio</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-block_read_hit_ratio"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Block cache write hits</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-block_write_hits"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Block cache write misses</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-block_write_misses"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Block cache write hit ratio</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-block_write_hit_ratio"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Cache evictions</h2><span class="sub">write side, LRU, fallback</span></div>
+            <div class="chart" id="chart-vp-cache_evictions"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Cache reclaim scan</h2><span class="sub">blocks, misses, give-ups</span></div>
+            <div class="chart" id="chart-vp-cache_reclaim_scan"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Cache reclaim stalls</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-cache_reclaim_stalls"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Readahead</h2><span class="sub">arms and batches</span></div>
+            <div class="chart" id="chart-vp-cache_readahead"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Readahead blocks</h2><span class="sub">fetched, present, raced</span></div>
+            <div class="chart" id="chart-vp-cache_readahead_blocks"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Cached</h2><span class="sub">read cached, present, clean write side</span></div>
+            <div class="chart" id="chart-vp-cache_cached"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Cache read hits</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-cache_read_hits"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Cache read misses</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-cache_read_misses"></div>
+          </div>
         </div>
-        <div class="card chart-card">
-          <div class="card-head"><h2>Write throughput</h2><span class="sub">MiB/s per volume</span></div>
-          <div class="chart" id="chart-write_mbps"></div>
+      </details>
+      <details class="row" data-row="spdk" open>
+        <summary>SPDK</summary>
+        <div class="charts">
+          <div class="card chart-card">
+            <div class="card-head"><h2>Read throughput</h2><span class="sub">per volume</span></div>
+            <div class="chart" id="chart-vp-spdk_read"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Write throughput</h2><span class="sub">per volume</span></div>
+            <div class="chart" id="chart-vp-spdk_write"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Read IOPS</h2><span class="sub">operations/s per volume</span></div>
+            <div class="chart" id="chart-vp-spdk_read_iops"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Write IOPS</h2><span class="sub">operations/s per volume</span></div>
+            <div class="chart" id="chart-vp-spdk_write_iops"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Read latency</h2><span class="sub">ticks, min and max</span></div>
+            <div class="chart" id="chart-vp-spdk_read_latency"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Write latency</h2><span class="sub">ticks, min and max</span></div>
+            <div class="chart" id="chart-vp-spdk_write_latency"></div>
+          </div>
         </div>
-        <div class="card chart-card">
-          <div class="card-head"><h2>Read IOPS</h2><span class="sub">operations/s per volume</span></div>
-          <div class="chart" id="chart-read_iops"></div>
+      </details>
+      <details class="row" data-row="s3">
+        <summary>S3</summary>
+        <div class="charts">
+          <div class="card chart-card">
+            <div class="card-head"><h2>GETs</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-http_gets"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Average GET time</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-http_avg_get_time"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>PUTs</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-http_puts"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Average PUT time</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-http_avg_put_time"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>DELETEs</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-http_deletes"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Average DELETE time</h2><span class="sub"></span></div>
+            <div class="chart" id="chart-vp-http_avg_delete_time"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>HTTP errors</h2><span class="sub">5xx, 4xx, 3xx, other</span></div>
+            <div class="chart" id="chart-vp-http_errors"></div>
+          </div>
         </div>
-        <div class="card chart-card">
-          <div class="card-head"><h2>Write IOPS</h2><span class="sub">operations/s per volume</span></div>
-          <div class="chart" id="chart-write_iops"></div>
+      </details>
+    </div>
+
+    <div id="view-snapshots" class="view" hidden>
+      <div class="kpis" id="snapshot-kpis"></div>
+
+      <div class="card">
+        <div class="card-head"><h2>Snapshots</h2></div>
+        <div class="table-wrap">
+          <table class="nodes">
+            <thead><tr>
+              <th class="col-pool">Pool</th><th>Snapshot</th><th>Status</th><th>Kind</th><th>Incremental</th>
+              <th>Volume</th><th>Node</th><th>Storage pool</th>
+            </tr></thead>
+            <tbody id="snapshots"></tbody>
+          </table>
         </div>
       </div>
     </div>
 
-    <div id="view-hosts" class="view">
-      <div class="kpis" id="kpis"></div>
+    <div id="view-overview" class="view">
+      <div class="kpis" id="ov-kpis"></div>
 
       <div class="card">
-        <div class="card-head"><h2>Hosts</h2><span class="sub">select a row to see its host below</span></div>
+        <div class="card-head"><h2>Node status</h2><span class="sub">the cluster's view of each node, and whether Prometheus reaches its services</span></div>
         <div class="table-wrap">
-          <table class="nodes" id="hosts-table">
+          <table class="nodes">
             <thead><tr>
-              <th></th><th class="col-pool">Pool</th><th>Host</th><th>Cluster</th><th>Core</th><th>Cache</th><th>Storage</th>
-              <th class="num">CPU</th><th class="num">RAM</th><th class="num">Root disk</th><th class="num">Load 1m</th>
-              <th class="num">Disk read / write</th><th class="num">Net in / out</th><th class="num">Dirty</th>
-              <th class="num">Pressure cpu / mem / io</th>
+              <th></th><th class="col-pool">Pool</th><th>Host</th><th>Cluster</th><th>Core</th><th>Cache</th><th>Storage</th><th>UUID</th>
             </tr></thead>
-            <tbody id="nodes"></tbody>
+            <tbody id="ov-nodes"></tbody>
           </table>
         </div>
       </div>
@@ -157,52 +314,31 @@
 
       <div class="charts">
           <div class="card chart-card">
-            <div class="card-head"><h2>CPU usage</h2><span class="sub">% per host</span></div>
-            <div class="chart" id="chart-host_cpu"></div>
+            <div class="card-head"><h2>CPU usage</h2><span class="sub">% per node, as core reports it</span></div>
+            <div class="chart" id="chart-cpu"></div>
           </div>
           <div class="card chart-card">
-            <div class="card-head"><h2>RAM usage</h2><span class="sub">% per host</span></div>
-            <div class="chart" id="chart-host_ram"></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h2>Disk read</h2><span class="sub">MiB/s per host, physical disks</span></div>
-            <div class="chart" id="chart-host_disk_read"></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h2>Disk write</h2><span class="sub">MiB/s per host, physical disks</span></div>
-            <div class="chart" id="chart-host_disk_write"></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h2>Network received</h2><span class="sub">MiB/s per host</span></div>
-            <div class="chart" id="chart-host_net_rx"></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h2>Network sent</h2><span class="sub">MiB/s per host</span></div>
-            <div class="chart" id="chart-host_net_tx"></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h2>Dirty pages</h2><span class="sub">MiB per host, waiting to be written</span></div>
-            <div class="chart" id="chart-host_dirty"></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h2>CPU pressure</h2><span class="sub">% of time tasks waited for CPU</span></div>
-            <div class="chart" id="chart-host_psi_cpu"></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h2>Memory pressure</h2><span class="sub">% of time tasks waited for memory</span></div>
-            <div class="chart" id="chart-host_psi_memory"></div>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h2>IO pressure</h2><span class="sub">% of time tasks waited for IO</span></div>
-            <div class="chart" id="chart-host_psi_io"></div>
+            <div class="card-head"><h2>RAM usage</h2><span class="sub">% per node, as core reports it</span></div>
+            <div class="chart" id="chart-ram"></div>
           </div>
       </div>
+    </div>
 
+    <div id="view-hosts" class="view" hidden>
       <div class="host-head">
-        <h2>Host</h2>
-        <select id="host-pick" aria-label="Host"></select>
+        <h2 id="host-name">No host</h2>
         <span class="sub" id="host-sub"></span>
       </div>
+      <div class="filters">
+        <span class="label">Range</span>
+        <div class="seg" role="radiogroup" aria-label="Time range">
+          <button role="radio" data-range="900">15m</button>
+          <button role="radio" data-range="3600" aria-checked="true">1h</button>
+          <button role="radio" data-range="21600">6h</button>
+          <button role="radio" data-range="86400">24h</button>
+        </div>
+      </div>
+
 
       <details class="row" data-row="quick" open>
         <summary>Quick CPU / Mem / Disk</summary>
@@ -326,6 +462,14 @@
       <details class="row" data-row="disk">
         <summary>Storage Disk</summary>
         <div class="charts">
+          <div class="card chart-card">
+            <div class="card-head"><h2>Disk read / write IOps</h2><span class="sub">per device</span></div>
+            <div class="chart" id="chart-hp-disk_iops-row" data-panel="disk_iops"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Disk read / write data</h2><span class="sub">per device</span></div>
+            <div class="chart" id="chart-hp-disk_throughput-row" data-panel="disk_throughput"></div>
+          </div>
           <div class="card chart-card">
             <div class="card-head"><h2>Average wait time</h2><span class="sub">per IO, per device</span></div>
             <div class="chart" id="chart-hp-disk_wait"></div>

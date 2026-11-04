@@ -44,8 +44,15 @@ StorageClass's cache sizes and QoS caps from the pool's storage_class.`,
 				"storage": sc.Storage, "pool": sc.Pool, "nodes": sc.Nodes,
 				"command": sc.command(), "docs": []string{docsInstall, docsStorageClass},
 			}
+			note := sc.missingNote()
+			if note != "" {
+				res["note"] = note
+			}
 			return ui.Result(res, func(w io.Writer) {
 				fmt.Fprintf(w, "Install the CSI driver (%s):\n\n%s\n\n", docsInstall, sc.command())
+				if note != "" {
+					fmt.Fprintf(w, "Note: %s\n\n", note)
+				}
 				fmt.Fprintf(w, "More details about storage classes: %s\n", docsStorageClass)
 			})
 		},
@@ -79,6 +86,18 @@ type storageClassInfo struct {
 	// Params are the pool's storage_class parameters, as the driver names
 	// them, with defaultQoS for the caps it leaves out.
 	Params map[string]string
+	// Configured is whether the pool has a storage_class in the config.
+	Configured bool
+}
+
+// missingNote says why the cache sizes are missing when the pool has no
+// storage_class: configs written before config create added it have none.
+func (sc *storageClassInfo) missingNote() string {
+	if sc.Configured {
+		return ""
+	}
+	return fmt.Sprintf("%s has no storage_class in %s.bbctl.yaml: the command sets no cache sizes (ratio_cache_*, max_cache_*). "+
+		"Add them under the pool's storage_class: (see %s); `config create` writes them from the calculator.", sc.Pool, sc.Storage, docsStorageClass)
 }
 
 // storageClass reads what the driver needs: the API is the management
@@ -104,6 +123,7 @@ func (a *app) storageClass(ctx context.Context, d *deploy.Deployment) (*storageC
 	for _, p := range d.Cfg.Pools {
 		if p.Name == sc.Pool {
 			maps.Copy(sc.Params, p.StorageClass)
+			sc.Configured = len(p.StorageClass) > 0
 		}
 	}
 

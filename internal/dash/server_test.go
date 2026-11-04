@@ -64,10 +64,11 @@ func (p *fakeProm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		start := r.URL.Query().Get("start")
 		for _, n := range fakeNodes {
 			if want == "" || want == n.pool {
-				// Volume charts are summed by name: one volume per node.
-				key := fmt.Sprintf(`"ip":%q`, n.ip)
-				if strings.Contains(q, "by(name)") {
-					key = fmt.Sprintf(`"name":"vol-%s"`, n.host)
+				// Core series name their node, volume panels their volume:
+				// one per node.
+				key := fmt.Sprintf(`"name":"vol-%s"`, n.host)
+				if strings.Contains(q, "core_cluster") {
+					key = fmt.Sprintf(`"ip":%q`, n.ip)
 				} else if strings.Contains(q, "node_") {
 					key = fmt.Sprintf(`"instance":%q,"node":%q`, n.ip, n.ip) // as mgmt federates node_exporter
 				}
@@ -76,6 +77,17 @@ func (p *fakeProm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[%s]}}`, strings.Join(rows, ","))
 		return
+	}
+	// Each pool's snapshot stats, one series per metric.
+	for _, pool := range []string{"pool1", "pool2"} {
+		switch {
+		case strings.HasPrefix(q, "sum by(__name__)"):
+			for m, v := range map[string]string{"snapshot_size": "100", "snapshot_bytes": "1000", "snapshot_server_side_copy_bytes": "250", "snapshot_errors": "1", "snapshot_elapsed_time": "30"} {
+				add(pool, fmt.Sprintf(`"__name__":%q`, m), v)
+			}
+		case strings.HasPrefix(q, "count by(__name__)"):
+			add(pool, `"__name__":"snapshot_elapsed_time"`, "2")
+		}
 	}
 	for _, n := range fakeNodes {
 		bad := n.host == "node-b"
@@ -105,6 +117,11 @@ func (p *fakeProm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			add(n.pool, fmt.Sprintf(`"name":"vol-%s","status":%q,"size":"10240","cache_rw_cache_size":"1024","cache_r_cache_size":"2048","storage_bucket":"bkt","sc_node":%q,"ip":%q`,
 				n.host, st, n.uuid, n.ip), v)
+		case strings.HasPrefix(q, "topk(1, snapshot_status"):
+			// One snapshot per node, taken by it; node b's failed.
+			st := map[bool]string{true: "FAILED", false: "READY"}[bad]
+			add(n.pool, fmt.Sprintf(`"name":"snap-%s","status":%q,"kind":"full","storage_pool":"sp1","sc_node":%q,"volume":"vol-%s","incremental":"false"`,
+				n.host, st, n.uuid, n.host), "1")
 		case strings.Contains(q, "node_uname_info"):
 			add(n.pool, fmt.Sprintf(`"instance":%q,"node":%q,"nodename":"ip-%s","release":"6.8"`, n.ip, n.ip, n.host), "1")
 		case strings.Contains(q, "node_"):
@@ -212,13 +229,6 @@ func TestOverview(t *testing.T) {
 	if s := b["services"].(map[string]any); b["status"] != "DOWN" || s["core"] != false || s["cache"] != true {
 		t.Errorf("node b: %v", b)
 	}
-	// node_exporter readings join the node by IP.
-	vals := a["values"].(map[string]any)
-	for k := range hostQueries {
-		if k != "uname" && vals[k] != 42.0 {
-			t.Errorf("node a value %s = %v", k, vals[k])
-		}
-	}
 
 	// Every pool: pool1's and pool2's nodes, and a warning for pool3.
 	_, out = c.do("GET", "/api/overview?pool=all", "")
@@ -245,7 +255,7 @@ func TestSeries(t *testing.T) {
 	if code, _ := c.do("GET", "/api/series?metric=up", ""); code != 400 {
 		t.Errorf("unknown metric: %d, want 400", code)
 	}
-	code, out := c.do("GET", "/api/series?metric=host_cpu&range=900&pool=pool1", "")
+	code, out := c.do("GET", "/api/series?metric=cpu&range=900&pool=pool1", "")
 	if code != 200 {
 		t.Fatalf("series: %d %v", code, out)
 	}
@@ -257,7 +267,11 @@ func TestSeries(t *testing.T) {
 	if len(lines) != 2 || first["ip"] != "10.0.1.10" || first["pool"] != "pool1" || first["v"].([]any)[0] != 5.0 || first["v"].([]any)[1] != nil {
 		t.Errorf("aligned series: %v", lines)
 	}
-	_, out = c.do("GET", "/api/series?metric=host_ram&pool=all", "")
+	_, out = c.do("GET", "/api/series?metric=cpu&pool=pool2", "")
+	if l := out["series"].([]any); len(l) != 1 || l[0].(map[string]any)["ip"] != "10.1.1.10" {
+		t.Errorf("core cpu (by its ip label): %v", l)
+	}
+	_, out = c.do("GET", "/api/series?metric=ram&pool=all", "")
 	if n := len(out["series"].([]any)); n != 3 {
 		t.Errorf("all pools: %d lines, want 3", n)
 	}
@@ -305,13 +319,13 @@ func TestCache(t *testing.T) {
 	}
 }
 
-func TestStorage(t *testing.T) {
+func TestVolumes(t *testing.T) {
 	srv, prom := newTestServer(t)
 	c := login(t, srv)
 
-	code, out := c.do("GET", "/api/storage?pool=pool1", "")
+	code, out := c.do("GET", "/api/volumes?pool=pool1", "")
 	if code != 200 || out["warnings"] != nil {
-		t.Fatalf("storage: %d %v", code, out)
+		t.Fatalf("volumes: %d %v", code, out)
 	}
 	sum := out["summary"].(map[string]any)
 	want := map[string]float64{"volumes": 2, "not_ready": 1, "size_mib": 20480, "rw_mib": 2048, "r_mib": 4096}
@@ -328,19 +342,83 @@ func TestStorage(t *testing.T) {
 		t.Errorf("volume b should not be ready: %v", v)
 	}
 
-	_, out = c.do("GET", "/api/storage?pool=all", "")
+	_, out = c.do("GET", "/api/volumes?pool=all", "")
 	if w := out["warnings"].([]any); len(w) != 1 || out["summary"].(map[string]any)["volumes"] != 3.0 {
 		t.Errorf("all pools: %v (pool3 has no metrics)", out)
 	}
 
-	_, out = c.do("GET", "/api/series?metric=read_mbps&pool=pool2", "")
+	_, out = c.do("GET", "/api/volume/series?panel=spdk_read&pool=pool2", "")
 	lines := out["series"].([]any)
-	if l := lines[0].(map[string]any); len(lines) != 1 || l["volume"] != "vol-node-c" || l["ip"] != nil {
-		t.Errorf("volume series: %v", lines)
+	if l := lines[0].(map[string]any); len(lines) != 1 || l["volume"] != "vol-node-c" || l["label"] != "vol-node-c" || out["unit"] != "bytes_rate" {
+		t.Errorf("volume series: %v", out)
 	}
 	last := prom.queries[len(prom.queries)-1]
-	if !strings.Contains(last, `sum by(name) (spdk_volume_bytes_read{pool="pool2"})`) {
+	if !strings.Contains(last, `sum by(name) (spdk_volume_bytes_read{pool="pool2"}) / 15`) {
 		t.Errorf("volume query: %s", last)
+	}
+	// A volume's lines sit together, ordered by label.
+	_, out = c.do("GET", "/api/volume/series?panel=cgroup_memory_dirty&pool=all", "")
+	var labels []string
+	for _, l := range out["series"].([]any) {
+		labels = append(labels, l.(map[string]any)["label"].(string))
+	}
+	if want := "vol-node-a dirty,vol-node-a writeback,vol-node-b dirty,vol-node-b writeback,vol-node-c dirty,vol-node-c writeback"; strings.Join(labels, ",") != want {
+		t.Errorf("lines: %v, want %s", labels, want)
+	}
+	if w, _ := out["warnings"].([]any); len(w) != 1 {
+		t.Errorf("warnings: %v (pool3 has no metrics)", w)
+	}
+	if code, _ := c.do("GET", "/api/volume/series?panel=up", ""); code != 400 {
+		t.Errorf("unknown panel: %d, want 400", code)
+	}
+}
+
+func TestVolumePanels(t *testing.T) {
+	// Every metric of every panel carries the pool matcher.
+	for name, p := range volumePanels {
+		if p.unit == "" || len(p.lines) == 0 {
+			t.Errorf("%s: no unit or lines", name)
+		}
+		for _, l := range p.lines {
+			q := expand(l.expr, `pool="p"`, time.Minute)
+			if n := strings.Count(l.expr, "{{sel}}"); n == 0 || strings.Count(q, `{pool="p"}`) != n {
+				t.Errorf("%s: a metric without the pool matcher: %s", name, q)
+			}
+		}
+	}
+}
+
+func TestSnapshots(t *testing.T) {
+	srv, _ := newTestServer(t)
+	c := login(t, srv)
+
+	code, out := c.do("GET", "/api/snapshots?pool=pool1", "")
+	if code != 200 || out["warnings"] != nil {
+		t.Fatalf("snapshots: %d %v", code, out)
+	}
+	sum := out["summary"].(map[string]any)
+	want := map[string]float64{"snapshots": 2, "ready": 1, "not_ready": 1, "logical_bytes": 100e6, "transfer_errors": 1,
+		"server_side_bytes": 250, "server_side_share": 25, "avg_elapsed": 15}
+	for k, v := range want {
+		if sum[k] != v {
+			t.Errorf("summary %s = %v, want %v", k, sum[k], v)
+		}
+	}
+	if _, ok := sum["avg_speed"]; ok {
+		t.Errorf("avg_speed without snapshot_speed series: %v", sum["avg_speed"])
+	}
+	snaps := out["snapshots"].([]any)
+	if s := snaps[0].(map[string]any); s["name"] != "snap-node-a" || s["ready"] != true || s["hostname"] != "node-a" || s["volume"] != "vol-node-a" {
+		t.Errorf("snapshot a (hostname from core_cluster_nodes): %v", s)
+	}
+	if s := snaps[1].(map[string]any); s["ready"] != false || s["status"] != "FAILED" {
+		t.Errorf("snapshot b should not be ready: %v", s)
+	}
+
+	// Across pools the averages weigh each pool by its series.
+	_, out = c.do("GET", "/api/snapshots?pool=all", "")
+	if sum := out["summary"].(map[string]any); sum["snapshots"] != 3.0 || sum["avg_elapsed"] != 15.0 || sum["logical_bytes"] != 200e6 {
+		t.Errorf("all pools summary: %v", sum)
 	}
 }
 

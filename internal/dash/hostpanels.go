@@ -25,6 +25,9 @@ const cores = `scalar(count(count(node_cpu_seconds_total{{sel}}) by (cpu)))`
 // partitions or the nbd devices of volumes not in use.
 const panelDisks = `device=~"[a-z]+|nvme[0-9]+n[0-9]+|md[0-9]+"`
 
+// Interfaces in the network panels: no loopback or virtual ones.
+const netDevices = `device!~"lo|veth.*|docker.*|br-.*|virbr.*"`
+
 // Filesystems in the space panels: real ones, not tmpfs or snap images.
 const panelFS = `fstype!~"rootfs|tmpfs|squashfs|overlay|ramfs"`
 
@@ -309,53 +312,86 @@ func (s *Server) hostSeries(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("unknown panel"))
 		return
 	}
-	start, end, step := window(r)
-	win := max(step, time.Minute)
-	res := make([][]series, len(pn.lines))
-	errs := make([]error, len(pn.lines))
-	var wg sync.WaitGroup
-	for i, l := range pn.lines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			res[i], errs[i] = p.prom.queryRange(r.Context(), expand(l.expr, sel, win), start, end, step)
-		}()
-	}
-	wg.Wait()
-	if err := errors.Join(errs...); err != nil {
-		writeError(w, http.StatusBadGateway, err)
+	out, errs := drawPanel(r, pn, []*pool{p}, []string{sel}, false)
+	if errs[0] != nil {
+		writeError(w, http.StatusBadGateway, errs[0])
 		return
 	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// drawPanel queries a panel's lines from each pool, with that pool's
+// matchers, and puts them on one grid; byVolume names each line's volume
+// from its name label. A pool that fails has its error in errs and no lines.
+func drawPanel(r *http.Request, pn panel, pools []*pool, sels []string, byVolume bool) (*Series, []error) {
+	start, end, step := window(r)
+	win := max(step, time.Minute)
+	res := make([][][]series, len(pools))
+	errs := make([]error, len(pools))
+	each(pools, func(i int, p *pool) {
+		if p.prom == nil {
+			errs[i] = errNoMetrics
+			return
+		}
+		res[i] = make([][]series, len(pn.lines))
+		lineErrs := make([]error, len(pn.lines))
+		var wg sync.WaitGroup
+		for j, l := range pn.lines {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				res[i][j], lineErrs[j] = p.prom.queryRange(r.Context(), expand(l.expr, sels[i], win), start, end, step)
+			}()
+		}
+		wg.Wait()
+		errs[i] = errors.Join(lineErrs...)
+	})
+
 	// Lines that stayed at zero are left out, as Grafana's "hide zero
 	// series" does: on a disk panel they are most of the legend.
 	type labeled struct {
-		label string
-		sr    series
+		pool int
+		line Line
+		sr   series
 	}
 	var lines []labeled
 	zero := 0
-	perDevice := false
-	for i, l := range pn.lines {
-		perDevice = perDevice || strings.Contains(l.legend, "{{")
-		for _, sr := range res[i] {
-			if allZero(sr) {
-				zero++
-				continue
+	perItem := false
+	for i, p := range pools {
+		if errs[i] != nil {
+			continue
+		}
+		for j, l := range pn.lines {
+			perItem = perItem || strings.Contains(l.legend, "{{")
+			for _, sr := range res[i][j] {
+				if allZero(sr) {
+					zero++
+					continue
+				}
+				line := Line{Pool: p.name, Label: legend(l.legend, sr.Labels)}
+				if byVolume {
+					line.Volume = sr.Labels["name"]
+				}
+				lines = append(lines, labeled{i, line, sr})
 			}
-			lines = append(lines, labeled{legend(l.legend, sr.Labels), sr})
 		}
 	}
-	// A per-device panel is ordered by device, so a device's read and write
-	// sit together; others keep the panel's order.
-	if perDevice {
-		sort.SliceStable(lines, func(a, b int) bool { return naturalLess(lines[a].label, lines[b].label) })
+	// A per-device or per-volume panel is ordered by its label, so a
+	// device's read and write sit together; others keep the panel's order.
+	if perItem {
+		sort.SliceStable(lines, func(a, b int) bool {
+			if lines[a].pool != lines[b].pool {
+				return lines[a].pool < lines[b].pool
+			}
+			return naturalLess(lines[a].line.Label, lines[b].line.Label)
+		})
 	}
 	out := grid(start, end, step)
 	out.Unit, out.Zero = pn.unit, zero
 	for _, l := range lines {
-		out.addLine(Line{Pool: p.name, Label: l.label}, l.sr)
+		out.addLine(l.line, l.sr)
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out, errs
 }
 
 func allZero(sr series) bool {

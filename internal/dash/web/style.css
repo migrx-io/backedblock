@@ -192,22 +192,36 @@ details.members ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); f
 
 /* uPlot chrome in the palette's ink */
 .u-legend { color: var(--ink-2); font-size: 12px; text-align: left; }
+.chart-tip {
+  position: absolute; z-index: 10; pointer-events: none; min-width: 160px; max-width: 420px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); padding: 6px 10px; font-size: 12px; color: var(--ink-2);
+}
+.chart-tip .tip-time { color: var(--muted); margin-bottom: 4px; }
+.chart-tip .tip-row { display: flex; align-items: center; gap: 8px; line-height: 18px; white-space: nowrap; }
+.chart-tip .tip-row.near { color: var(--ink); font-weight: 600; }
+.chart-tip .tip-sw { width: 10px; height: 3px; border-radius: 2px; flex: none; }
+.chart-tip .tip-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.chart-tip .tip-v { font-variant-numeric: tabular-nums; margin-left: 12px; }
+.chart-tip .tip-more { color: var(--muted); margin-top: 2px; }
 .u-legend .u-marker { border-radius: 2px; }
 .u-legend th { font-weight: 500; }
 .u-select { background: rgba(127, 127, 127, 0.12); }
 
 /* Hosts: a row picks the host shown in detail. */
-.nodes tr.pick { cursor: pointer; }
-.nodes tr.pick:hover td { background: var(--grid); }
-.nodes tr.selected td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
-.host-head { display: flex; align-items: center; gap: 12px; margin: 28px 0 12px; }
+.host-head { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 16px; }
 .host-head h2 { margin: 0; font-size: 18px; }
-.host-head select {
-  font: inherit; color: inherit; background: var(--surface);
-  border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+/* The Hosts view's node filter, a single choice as in Node Exporter Full. */
+.node-pick {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: 6px; padding: 0 0 0 10px; background: var(--page);
 }
-.host-head select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.node-pick .k { color: var(--muted); font-size: 12px; }
+.node-pick select {
+  font: inherit; color: var(--ink); background: transparent; border: 0; padding: 5px 8px 5px 2px; cursor: pointer;
+}
+.node-pick select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Grafana-style rows: a heading that folds its panels away. */
 details.row { margin-bottom: 8px; }

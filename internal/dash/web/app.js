@@ -57,6 +57,9 @@ function showLogin(message) {
   $("tabs").hidden = true;
   $("pool-pick").hidden = true;
   $("pool-pick").open = false;
+  $("pick").hidden = true;
+  $("pick").open = false;
+  $("node-pick").hidden = true;
   $("login-view").hidden = false;
   $("login-error").textContent = message || "";
   $("login-form").password.focus();
@@ -98,17 +101,19 @@ function showMain() {
   refresh();
 }
 
-// The view, the pools and the host shown in detail are in the URL hash
-// (#hosts&pool=pool1&host=pool1/10.0.1.10), so a reload keeps them.
+// The view, the pools, the volumes picked and the host shown are in the URL
+// hash (#hosts&pool=pool1&host=pool1/10.0.1.10), so a reload keeps them.
 function hashParams() {
   const [view, ...rest] = location.hash.replace(/^#/, "").split("&");
   const q = new URLSearchParams(rest.join("&"));
-  return { view, pool: q.get("pool") || "all", host: q.get("host") || "" };
+  return { view, pool: q.get("pool") || "all", vols: q.get("vols") || "", host: q.get("host") || "" };
 }
+
+const VIEWS = ["overview", "hosts", "cache", "volumes", "snapshots"];
 
 function currentView() {
   const v = hashParams().view;
-  return ["cache", "storage"].includes(v) ? v : "hosts";
+  return v === "storage" ? "volumes" : VIEWS.includes(v) ? v : "overview";
 }
 
 // The selected pools, in the configured order; every pool when none is
@@ -123,19 +128,69 @@ function allPicked() {
   return selectedPools().length === state.pools.length;
 }
 
-function setHash(view, pools, host = hashParams().host) {
-  const all = !pools || pools.length === 0 || pools.length === state.pools.length;
-  location.hash = view + (all ? "" : `&pool=${pools.map(encodeURIComponent).join(",")}`) + (host ? `&host=${encodeURIComponent(host)}` : "");
+// setHash goes to view, changing the hash parameters in patch and keeping
+// the rest.
+function setHash(view, patch = {}) {
+  const h = { ...hashParams(), ...patch };
+  const list = (v) => v.split(",").map(encodeURIComponent).join(",");
+  const parts = [view];
+  if (h.pool && h.pool !== "all") parts.push(`pool=${list(h.pool)}`);
+  if (h.vols) parts.push(`vols=${list(h.vols)}`);
+  if (h.host) parts.push(`host=${encodeURIComponent(h.host)}`);
+  location.hash = parts.join("&");
 }
 
 function poolQuery() {
   return `pool=${allPicked() ? "all" : selectedPools().map(encodeURIComponent).join(",")}`;
 }
 
+const nodeKey = (n) => `${n.pool}/${n.ip}`;
+const volumeKey = (v) => `${v.pool}/${v.name}`;
+
+// A host's name, with its pool and IP unless short.
+function hostLabel(n, short) {
+  if (short) return n.hostname || n.ip;
+  return `${n.hostname || n.ip} (${multiPool() ? n.pool + ", " : ""}${n.ip})`;
+}
+
+// The header picker narrows the Volumes view to some volumes, as Grafana's
+// $volume variable does, and keeps the choice in the hash.
+const PICKS = {
+  volumes: {
+    param: "vols", title: "Volumes", all: "All volumes",
+    items: () => state.storage?.volumes || [], key: volumeKey,
+    label: (v, short) => (short || !multiPool() ? v.name : `${v.name} (${v.pool})`),
+  },
+};
+
+// The items picked for a view, in table order; every item when none is
+// picked (or none picked is still listed).
+function picked(view) {
+  const c = PICKS[view];
+  const items = c.items();
+  const want = new Set(hashParams()[c.param].split(","));
+  const out = items.filter((i) => want.has(c.key(i)));
+  return out.length ? out : items;
+}
+
+function allItemsPicked(view) {
+  return picked(view).length === PICKS[view].items().length;
+}
+
+
+// Lines of a chart narrowed to the view's picked items, matched by keyOf.
+function onlyPicked(view, data, keyOf) {
+  if (!allItemsPicked(view)) {
+    const want = new Set(picked(view).map(PICKS[view].key));
+    data.series = (data.series || []).filter((s) => want.has(keyOf(s)));
+  }
+  return data;
+}
+
 document.querySelectorAll("#tabs a").forEach((a) =>
   a.addEventListener("click", (e) => {
     e.preventDefault();
-    setHash(a.dataset.view, allPicked() ? [] : selectedPools());
+    setHash(a.dataset.view);
   }),
 );
 
@@ -149,12 +204,22 @@ $("pool-menu").addEventListener("change", (e) => {
   }
   // Unticking the last pool means every pool, never none; ticking every pool
   // is "All pools".
-  setHash(currentView(), pools);
+  const all = pools.length === 0 || pools.length === state.pools.length;
+  setHash(currentView(), { pool: all ? "all" : pools.join(",") });
 });
 
-// Close the menu on a click outside it.
+$("pick-menu").addEventListener("change", (e) => {
+  const view = currentView();
+  const c = PICKS[view];
+  const keys = e.target.value === "*" ? [] : [...$("pick-menu").querySelectorAll("input[data-item]:checked")].map((b) => b.value);
+  // As with pools: none or every item ticked is all of them.
+  const all = keys.length === 0 || keys.length === c.items().length;
+  setHash(view, { [c.param]: all ? "" : keys.join(",") });
+});
+
+// Close a menu on a click outside it.
 document.addEventListener("click", (e) => {
-  if (!$("pool-pick").contains(e.target)) $("pool-pick").open = false;
+  for (const id of ["pool-pick", "pick"]) if (!$(id).contains(e.target)) $(id).open = false;
 });
 
 function renderPools() {
@@ -168,8 +233,27 @@ function renderPools() {
   document.body.classList.toggle("multi-pool", picked.size > 1);
 }
 
+function renderPick() {
+  const view = currentView();
+  const c = PICKS[view];
+  const items = c ? c.items() : [];
+  $("pick").hidden = !c || items.length === 0 || $("main-view").hidden;
+  if ($("pick").hidden) return;
+  const chosen = picked(view);
+  const keys = new Set(chosen.map(c.key));
+  const all = allItemsPicked(view);
+  $("pick-title").textContent = c.title;
+  $("pick-menu").setAttribute("aria-label", c.title);
+  $("pick-menu").innerHTML =
+    `<label class="all"><input type="checkbox" value="*" ${all ? "checked disabled" : ""}> ${c.all}</label>` +
+    items.map((i) => `<label><input type="checkbox" data-item value="${esc(c.key(i))}" ${keys.has(c.key(i)) ? "checked" : ""}> ${esc(c.label(i))}</label>`).join("");
+  $("pick-label").textContent = all ? "All" : chosen.length === 1 ? c.label(chosen[0], true) : `${chosen.length} of ${items.length}`;
+}
+
 function applyView() {
   renderPools();
+  renderPick();
+  $("node-pick").hidden = currentView() !== "hosts" || $("main-view").hidden;
   const v = currentView();
   document.querySelectorAll(".view").forEach((el) => (el.hidden = el.id !== `view-${v}`));
   document.querySelectorAll("#tabs a").forEach((a) => (a.dataset.view === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
@@ -195,14 +279,21 @@ async function refresh() {
     const view = currentView();
     if (view === "cache") {
       renderCache(await api(`/api/cache?${poolQuery()}`));
-    } else if (view === "storage") {
-      state.storage = await api(`/api/storage?${poolQuery()}`);
+    } else if (view === "volumes") {
+      state.storage = await api(`/api/volumes?${poolQuery()}`);
       renderStorage(state.storage);
-      await renderCharts(["read_mbps", "write_mbps", "read_iops", "write_iops"]);
+      const rows = [...document.querySelectorAll("#view-volumes details.row[open]")];
+      await Promise.all(rows.map(renderPanelRow));
+    } else if (view === "snapshots") {
+      renderSnapshots(await api(`/api/snapshots?${poolQuery()}`));
+    } else if (view === "hosts") {
+      state.overview = await api(`/api/overview?${poolQuery()}`);
+      warnings(state.overview.warnings);
+      await renderHost();
     } else {
       state.overview = await api(`/api/overview?${poolQuery()}`);
       renderOverview(state.overview);
-      await Promise.all([renderCharts(Object.keys(CHARTS).filter((m) => m.startsWith("host_"))), renderHost()]);
+      await renderCharts(["cpu", "ram"]);
     }
     state.updatedAt = Date.now();
   } catch (err) {
@@ -218,15 +309,17 @@ function kpi(label, value, sub, cls) {
   return `<div class="kpi"><div class="k">${esc(label)}</div><div class="v">${esc(value)}</div><div class="s ${cls || ""}">${esc(sub || "")}</div></div>`;
 }
 
-function renderOverview(ov) {
-  $("warnings").innerHTML = (ov.warnings || []).map((w) => `<div>${esc(w)}</div>`).join("");
+function warnings(list) {
+  $("warnings").innerHTML = (list || []).map((w) => `<div>${esc(w)}</div>`).join("");
+}
 
+// The Overview: the "Core" dashboard, the cluster's view of its nodes.
+function renderOverview(ov) {
+  warnings(ov.warnings);
   const nodes = ov.nodes;
   const up = nodes.filter((n) => n.status === "UP").length;
   const listed = nodes.filter((n) => n.status).length;
   const down = (svc) => nodes.filter((n) => n.services && n.services[svc] === false).length;
-  const col = (k) => nodes.map((n) => n.values?.[k]).filter((v) => v != null);
-  const rootMax = highest(col("root"));
   const tiles = [
     kpi("Nodes", nodes.length, listed === nodes.length ? "all reporting" : `${nodes.length - listed} not reporting`, listed === nodes.length ? "" : "bad"),
     kpi("Nodes up", up, up === nodes.length && nodes.length ? "all up" : `${nodes.length - up} not up`, up === nodes.length && nodes.length ? "good" : "bad"),
@@ -235,24 +328,19 @@ function renderOverview(ov) {
     const d = down(svc);
     tiles.push(kpi(`${svc[0].toUpperCase() + svc.slice(1)} down`, d, d ? "see the table" : "none", d ? "bad" : "good"));
   }
-  tiles.push(
-    kpi("CPU", pct(mean(col("cpu"))), "average"),
-    kpi("RAM", pct(mean(col("ram"))), "average"),
-    kpi("Root disk", pct(rootMax), "fullest host", rootMax >= 90 ? "bad" : ""),
-    kpi("IO pressure", pct(highest(col("psi_io"))), "highest host"),
-  );
-  $("kpis").innerHTML = tiles.join("");
+  $("ov-kpis").innerHTML = tiles.join("");
 
-  const sel = selectedHost();
-  $("nodes").innerHTML = nodes.map((n) => nodeRow(n, sel && sel.pool === n.pool && sel.ip === n.ip)).join("") ||
-    `<tr><td colspan="15" class="dim">No nodes report to Prometheus.</td></tr>`;
+  $("ov-nodes").innerHTML = nodes.map((n) => `<tr>
+    <td><span class="swatch" style="background:${nodeColor(n.pool, n.ip)}"></span></td>
+    <td class="col-pool">${esc(n.pool)}</td>
+    <td><div class="name">${esc(n.hostname || n.ip)}</div><div class="ip">${esc(n.ip)}</div></td>
+    <td>${clusterStatus(n)}</td>
+    <td>${service(n, "core")}</td>
+    <td>${service(n, "cache")}</td>
+    <td>${service(n, "storage")}</td>
+    <td class="mono">${esc(n.uuid || "–")}</td>
+  </tr>`).join("") || `<tr><td colspan="8" class="dim">No nodes report to Prometheus.</td></tr>`;
 }
-
-// A row picks the host shown in detail below the charts.
-$("nodes").addEventListener("click", (e) => {
-  const tr = e.target.closest("tr[data-ip]");
-  if (tr) setHash("hosts", allPicked() ? [] : selectedPools(), `${tr.dataset.pool}/${tr.dataset.ip}`);
-});
 
 function status(text, kind) {
   return `<span class="st ${kind}">${esc(text)}</span>`;
@@ -273,27 +361,6 @@ function meter(v) {
   if (v == null) return `<span class="dim">–</span>`;
   const pct = Math.max(0, Math.min(100, v));
   return `<span class="meter"><span>${v.toFixed(1)}%</span><span class="track"><span class="fill" style="width:${pct}%"></span></span></span>`;
-}
-
-function nodeRow(n, selected) {
-  const v = n.values || {};
-  return `<tr class="pick${selected ? " selected" : ""}" data-pool="${esc(n.pool)}" data-ip="${esc(n.ip)}" title="${esc(n.uuid ? "UUID " + n.uuid : "")}">
-    <td><span class="swatch" style="background:${nodeColor(n.pool, n.ip)}"></span></td>
-    <td class="col-pool">${esc(n.pool)}</td>
-    <td><div class="name">${esc(n.hostname || n.ip)}</div><div class="ip">${esc(n.ip)}</div></td>
-    <td>${clusterStatus(n)}</td>
-    <td>${service(n, "core")}</td>
-    <td>${service(n, "cache")}</td>
-    <td>${service(n, "storage")}</td>
-    <td class="num">${meter(v.cpu)}<div class="ip">${v.cpus ? `${v.cpus} cores` : ""}</div></td>
-    <td class="num">${meter(v.ram)}<div class="ip">${v.ram_total ? bytes(v.ram_total) : ""}</div></td>
-    <td class="num">${meter(v.root)}</td>
-    <td class="num">${v.load1 == null ? "–" : v.load1.toFixed(2)}</td>
-    <td class="num">${bytes(v.disk_read, "/s")} / ${bytes(v.disk_write, "/s")}</td>
-    <td class="num">${bytes(v.net_rx, "/s")} / ${bytes(v.net_tx, "/s")}</td>
-    <td class="num">${bytes(v.dirty)}</td>
-    <td class="num">${pct(v.psi_cpu)} / ${pct(v.psi_memory)} / ${pct(v.psi_io)}</td>
-  </tr>`;
 }
 
 // --- cache --------------------------------------------------------------
@@ -371,18 +438,21 @@ function renderCache(c) {
 // --- storage ------------------------------------------------------------
 
 function renderStorage(st) {
-  $("warnings").innerHTML = (st.warnings || []).map((w) => `<div>${esc(w)}</div>`).join("");
-  const s = st.summary;
+  warnings(st.warnings);
+  renderPick();
+  const vols = picked("volumes");
+  const total = (k) => vols.reduce((a, v) => a + (v[k] || 0), 0);
+  const notReady = vols.filter((v) => !v.ready).length;
   $("storage-kpis").innerHTML = [
-    kpi("Volumes", s.volumes, s.volumes ? "" : "none reported"),
-    kpi("Not ready", s.not_ready, s.not_ready ? "see the table" : "none", s.not_ready ? "bad" : "good"),
-    kpi("Provisioned", size(s.size_mib), "all volumes"),
-    kpi("RW cache", size(s.rw_mib), "write-back, all volumes"),
-    kpi("Read cache", size(s.r_mib), "all volumes"),
+    kpi("Volumes", vols.length, vols.length ? "" : "none reported"),
+    kpi("Not ready", notReady, notReady ? "see the table" : "none", notReady ? "bad" : "good"),
+    kpi("Provisioned", size(total("size_mib")), allItemsPicked("volumes") ? "all volumes" : "picked volumes"),
+    kpi("RW cache", size(total("rw_mib")), "write-back"),
+    kpi("Read cache", size(total("r_mib")), ""),
   ].join("");
 
-  $("volumes").innerHTML = st.volumes.map((v, i) => `<tr>
-    <td><span class="swatch" style="background:${slotColor(i)}"></span></td>
+  $("volumes").innerHTML = vols.map((v) => `<tr>
+    <td><span class="swatch" style="background:${slotColor(volumeIndex(v.pool, v.name))}"></span></td>
     <td class="col-pool">${esc(v.pool)}</td>
     <td class="name">${esc(v.name)}</td>
     <td>${check(v.ready, v.status || "READY", v.status || "unknown")}</td>
@@ -392,6 +462,40 @@ function renderStorage(st) {
     <td>${v.node ? nodeCell(v) : status("–", "none")}</td>
     <td class="mono">${esc(v.bucket || "–")}</td>
   </tr>`).join("") || `<tr><td colspan="9" class="dim">No volumes reported.</td></tr>`;
+}
+
+// --- snapshots ----------------------------------------------------------
+
+function renderSnapshots(sv) {
+  warnings(sv.warnings);
+  const m = sv.summary;
+  const count = (label, v, sub) => kpi(label, v ?? 0, sub || "", v ? "bad" : "good");
+  $("snapshot-kpis").innerHTML = [
+    kpi("Snapshots", m.snapshots, m.snapshots ? "" : "none reported"),
+    kpi("Ready", m.ready, ""),
+    count("Not ready", m.not_ready, m.not_ready ? "see the table" : "none"),
+    kpi("Logical size", bytes(m.logical_bytes), "all snapshots"),
+    count("Transfer errors", m.transfer_errors),
+    count("Fatal errors", m.fatal_errors, "jobs"),
+    count("Retry errors", m.retry_errors, "jobs"),
+    kpi("Server-side copy", pct(m.server_side_share), "of the bytes sent"),
+    kpi("Server-side copied", bytes(m.server_side_bytes), ""),
+    kpi("Elapsed", m.avg_elapsed == null ? "–" : seconds(m.avg_elapsed), "average"),
+    kpi("Transfer time", m.avg_transfer_time == null ? "–" : seconds(m.avg_transfer_time), "average"),
+    kpi("Transfers", m.avg_total_transfers == null ? "–" : m.avg_total_transfers.toFixed(1), "average per snapshot"),
+    kpi("Speed", m.avg_speed == null ? "–" : bytes(m.avg_speed, "/s"), "average"),
+  ].join("");
+
+  $("snapshots").innerHTML = sv.snapshots.map((s) => `<tr>
+    <td class="col-pool">${esc(s.pool)}</td>
+    <td class="name">${esc(s.name)}</td>
+    <td>${check(s.ready, s.status || "READY", s.status || "unknown")}</td>
+    <td>${esc(s.kind || "–")}</td>
+    <td>${esc(s.incremental || "–")}</td>
+    <td>${esc(s.volume || "–")}</td>
+    <td>${s.node ? nodeCell(s) : status("–", "none")}</td>
+    <td>${esc(s.storage_pool || "–")}</td>
+  </tr>`).join("") || `<tr><td colspan="8" class="dim">No snapshots reported.</td></tr>`;
 }
 
 // --- host detail --------------------------------------------------------
@@ -427,24 +531,29 @@ function duration(s) {
 }
 
 const pct = (v) => (v == null ? "–" : (v < 10 ? v.toFixed(1) : v.toFixed(0)) + "%");
-const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
-const highest = (xs) => (xs.length ? Math.max(...xs) : null);
 
-// The host in the hash, if it is still listed; else the first node that
-// reports node_exporter readings.
-function selectedHost() {
+// The Hosts view's nodes: those of the selected pools that node_exporter
+// reports (they have a kernel), or every node when none does.
+function hostNodes() {
   const nodes = state.overview?.nodes || [];
+  const reporting = nodes.filter((n) => n.kernel);
+  return reporting.length ? reporting : nodes;
+}
+
+// The host in the hash, if it is still listed; else the first.
+function selectedHost() {
+  const nodes = hostNodes();
   const want = hashParams().host;
-  const n = nodes.find((n) => `${n.pool}/${n.ip}` === want) || nodes.find((n) => n.values) || nodes[0];
+  const n = nodes.find((n) => nodeKey(n) === want) || nodes[0];
   return n ? { pool: n.pool, ip: n.ip, node: n } : null;
 }
 
-$("host-pick").addEventListener("change", (e) => setHash("hosts", allPicked() ? [] : selectedPools(), e.target.value));
+$("host-pick").addEventListener("change", (e) => setHash("hosts", { host: e.target.value }));
 
 // Rows load their charts when opened, so closed ones cost nothing.
-document.querySelectorAll("#view-hosts details.row").forEach((d) =>
+document.querySelectorAll("details.row").forEach((d) =>
   d.addEventListener("toggle", () => {
-    if (d.open && d.dataset.row !== "quick") renderHostRow(d);
+    if (d.open && d.dataset.row !== "quick") renderPanelRow(d).catch((err) => err.auth && showLogin());
   }),
 );
 
@@ -454,18 +563,18 @@ function hostQuery(h) {
 
 async function renderHost() {
   const h = selectedHost();
-  const nodes = state.overview?.nodes || [];
-  $("host-pick").innerHTML = nodes.map((n) => {
-    const v = `${n.pool}/${n.ip}`;
-    return `<option value="${esc(v)}" ${h && v === `${h.pool}/${h.ip}` ? "selected" : ""}>${esc(n.hostname || n.ip)} (${esc(multiPool() ? n.pool + ", " : "")}${esc(n.ip)})</option>`;
+  $("host-pick").innerHTML = hostNodes().map((n) => {
+    const v = nodeKey(n);
+    return `<option value="${esc(v)}" ${h && v === `${h.pool}/${h.ip}` ? "selected" : ""}>${esc(hostLabel(n))}</option>`;
   }).join("");
-  $("host-sub").textContent = h?.node.kernel ? `kernel ${h.node.kernel}` : "";
+  $("host-name").textContent = h ? h.node.hostname || h.ip : "No host";
+  $("host-sub").textContent = h ? [h.node.pool, h.ip, h.node.kernel && `kernel ${h.node.kernel}`].filter(Boolean).join(" · ") : "";
   if (!h) {
     $("host-quick").innerHTML = `<div class="dim">No hosts report to Prometheus.</div>`;
     return;
   }
   const rows = [...document.querySelectorAll("#view-hosts details.row[open]")].filter((d) => d.dataset.row !== "quick");
-  await Promise.all([renderQuick(h), ...rows.map(renderHostRow)]);
+  await Promise.all([renderQuick(h), ...rows.map(renderPanelRow)]);
 }
 
 function multiPool() {
@@ -500,13 +609,21 @@ async function renderQuick(h) {
   ].join("");
 }
 
-async function renderHostRow(d) {
+// renderPanelRow draws a row's panels: the selected host's (hp-) or the
+// picked volumes' (vp-).
+async function renderPanelRow(d) {
   const h = selectedHost();
-  if (!h) return;
   await Promise.all([...d.querySelectorAll(".chart")].map(async (el) => {
     const id = el.id.replace(/^chart-/, "");
+    // A panel shown in two rows, as in Grafana, names it in data-panel.
+    const panel = el.dataset.panel || id.slice(3);
     try {
-      drawChart(id, await api(`/api/host/series?${hostQuery(h)}&panel=${id.replace(/^hp-/, "")}&range=${state.range}`));
+      if (id.startsWith("vp-")) {
+        const data = await api(`/api/volume/series?panel=${panel}&range=${state.range}&${poolQuery()}`);
+        drawChart(id, onlyPicked("volumes", data, (s) => `${s.pool}/${s.volume}`));
+      } else if (h) {
+        drawChart(id, await api(`/api/host/series?${hostQuery(h)}&panel=${panel}&range=${state.range}`));
+      }
     } catch (err) {
       if (err.auth) throw err;
       emptyChart(id, err.message);
@@ -518,23 +635,8 @@ async function renderHostRow(d) {
 
 // How each chart scales and prints its values.
 const fmtRate = (v, d) => (v >= 100 ? v.toFixed(0) : v.toFixed(d));
-const CHARTS = {
-  read_mbps: { axis: (v) => fmtRate(v, 1), value: (v) => fmtRate(v, 1) + " MiB/s" },
-  write_mbps: { axis: (v) => fmtRate(v, 1), value: (v) => fmtRate(v, 1) + " MiB/s" },
-  read_iops: { axis: (v) => fmtRate(v, 0), value: (v) => fmtRate(v, 0) + "/s" },
-  write_iops: { axis: (v) => fmtRate(v, 0), value: (v) => fmtRate(v, 0) + "/s" },
-};
 const percent = { max: 100, axis: (v) => v + "%", value: (v) => v.toFixed(1) + "%" };
-const mibps = { axis: (v) => fmtRate(v, 1), value: (v) => fmtRate(v, 1) + " MiB/s" };
-// Pressure is mostly near zero: scale to the data, not to 100%.
-const stall = { axis: (v) => fmtRate(v, 1) + "%", value: (v) => v.toFixed(2) + "%" };
-Object.assign(CHARTS, {
-  host_cpu: percent, host_ram: percent,
-  host_disk_read: mibps, host_disk_write: mibps, host_net_rx: mibps, host_net_tx: mibps,
-  host_dirty: { axis: (v) => fmtRate(v, 1), value: (v) => fmtRate(v, 1) + " MiB" },
-  host_psi_cpu: stall, host_psi_memory: stall, host_psi_io: stall,
-});
-
+const CHARTS = { cpu: percent, ram: percent };
 // A host panel's values print by its unit; its axis is wider for them.
 const UNITS = {
   percent: { axis: (v) => fmtRate(v, 1) + "%", value: (v) => v.toFixed(2) + "%" },
@@ -546,11 +648,12 @@ const UNITS = {
   count: { axis: (v) => fmtRate(v, 1), value: (v) => fmtRate(v, 2) },
 };
 
-// A node's or volume's line takes its name and color from its row in the
-// view's table; a host panel's lines are colored in the panel's order.
+// A node's line, or a volume panel's one line per volume, takes its name
+// and color from its row in the view's table; other panel lines are colored
+// in the panel's order.
 function lineLook(s, i) {
+  if (s.volume && s.label === s.volume) return { label: s.label, stroke: slotColor(volumeIndex(s.pool, s.volume)) };
   if (s.label) return { label: s.label, stroke: slotColor(i) };
-  if (s.volume) return { label: s.volume, stroke: slotColor(volumeIndex(s.pool, s.volume)) };
   return { label: nodeName(s.pool, s.ip), stroke: nodeColor(s.pool, s.ip) };
 }
 
@@ -566,7 +669,8 @@ document.querySelectorAll(".filters [data-range]").forEach((b) =>
 async function renderCharts(metrics) {
   await Promise.all(metrics.map(async (m) => {
     try {
-      drawChart(m, await api(`/api/series?metric=${m}&range=${state.range}&${poolQuery()}`));
+      const data = await api(`/api/series?metric=${m}&range=${state.range}&${poolQuery()}`);
+      drawChart(m, data);
     } catch (err) {
       if (err.auth) throw err;
       emptyChart(m, err.message);
@@ -605,12 +709,14 @@ function drawChart(metric, data) {
     ticks: { stroke: css("--grid"), width: 1, size: 4 },
     font: "12px system-ui, sans-serif",
   };
+  const looks = data.series.map((s, i) => lineLook(s, i));
   const u = new uPlot({
     width: el.clientWidth || 600,
     height: 220,
     padding: [8, 8, 0, 0],
     cursor: { points: { size: 8 }, drag: { x: false, y: false } },
     legend: { live: true },
+    plugins: [tooltip(looks, spec)],
     scales: { y: { range: (u, lo, hi) => [0, spec.max ?? Math.max((hi || 0) * 1.1, 1)] } },
     axes: [
       { ...axis, space: 80 },
@@ -619,7 +725,7 @@ function drawChart(metric, data) {
     series: [
       { value: (u, v) => (v == null ? "–" : new Date(v * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })) },
       ...data.series.map((s, i) => ({
-        ...lineLook(s, i),
+        ...looks[i],
         width: 2,
         points: { show: false },
         value: (u, v) => (v == null ? "–" : spec.value(v)),
@@ -628,6 +734,63 @@ function drawChart(metric, data) {
   }, aligned, el);
   u._key = key;
   state.charts[metric] = u;
+}
+
+// TIP_ROWS caps the hover tooltip; the line nearest the cursor is always in it.
+const TIP_ROWS = 12;
+
+// tooltip shows, at the cursor, the time and each line's name and value,
+// highest first, with the line nearest the cursor in bold: Grafana's
+// "all series" tooltip.
+function tooltip(looks, spec) {
+  let tip;
+  return {
+    hooks: {
+      init: (u) => {
+        tip = document.createElement("div");
+        tip.className = "chart-tip";
+        tip.hidden = true;
+        u.over.appendChild(tip);
+        u.over.addEventListener("mouseleave", () => (tip.hidden = true));
+      },
+      setCursor: (u) => {
+        const { left, top, idx } = u.cursor;
+        if (idx == null || left == null || left < 0) {
+          tip.hidden = true;
+          return;
+        }
+        let rows = [];
+        for (let i = 1; i < u.series.length; i++) {
+          const v = u.data[i][idx];
+          if (u.series[i].show && v != null) rows.push({ look: looks[i - 1], v, d: Math.abs(u.valToPos(v, "y") - top) });
+        }
+        if (rows.length === 0) {
+          tip.hidden = true;
+          return;
+        }
+        const near = rows.reduce((a, b) => (b.d < a.d ? b : a));
+        rows.sort((a, b) => b.v - a.v);
+        let more = 0;
+        if (rows.length > TIP_ROWS) {
+          more = rows.length - TIP_ROWS;
+          rows = rows.slice(0, TIP_ROWS);
+          if (!rows.includes(near)) {
+            rows[TIP_ROWS - 1] = near;
+          }
+        }
+        const t = new Date(u.data[0][idx] * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        tip.innerHTML = `<div class="tip-time">${esc(t)}</div>` + rows.map((r) =>
+          `<div class="tip-row${r === near ? " near" : ""}"><span class="tip-sw" style="background:${r.look.stroke}"></span>` +
+          `<span class="tip-label">${esc(r.look.label)}</span><span class="tip-v">${esc(spec.value(r.v))}</span></div>`,
+        ).join("") + (more ? `<div class="tip-more">+${more} more</div>` : "");
+        tip.hidden = false;
+        // Right of the cursor, or left of it near the right edge.
+        const w = tip.offsetWidth, h = tip.offsetHeight, ow = u.over.clientWidth, oh = u.over.clientHeight;
+        tip.style.left = (left + 16 + w > ow ? Math.max(0, left - 16 - w) : left + 16) + "px";
+        tip.style.top = Math.max(0, Math.min(top - h / 2, oh - h)) + "px";
+      },
+    },
+  };
 }
 
 window.addEventListener("resize", () => {

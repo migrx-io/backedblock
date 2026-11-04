@@ -49,3 +49,14 @@ func TestStorageClassCommand(t *testing.T) {
 		t.Errorf("storageclass values without parameters: %s", c)
 	}
 }
+
+func TestStorageClassMissingNote(t *testing.T) {
+	sc := &storageClassInfo{Storage: "dev", Pool: "pool1"}
+	if n := sc.missingNote(); !strings.Contains(n, "pool1 has no storage_class in dev.bbctl.yaml") {
+		t.Errorf("note = %q", n)
+	}
+	sc.Configured = true
+	if n := sc.missingNote(); n != "" {
+		t.Errorf("configured pool got a note: %q", n)
+	}
+}
