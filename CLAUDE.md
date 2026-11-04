@@ -102,7 +102,8 @@ Each of these fixed a real bug or review finding. Keep them.
 
 ## Develop
 
-`make build` builds `./bbctl`, `make check` runs everything below, `make clean`
+`make build` builds `./bbctl`, `make install` also copies it to
+`~/.local/bin`, `make check` runs everything below, `make clean`
 removes `./bbctl` and `dist/`. `make help` lists the rest. By hand:
 
 ```bash

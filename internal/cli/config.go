@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -132,6 +133,12 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 	if err := yaml.Unmarshal([]byte(est.Config.Pool), &sized); err != nil {
 		return ui.Wrap(ui.ExitError, "", fmt.Errorf("reading the calculator's pool config: %w", err))
 	}
+	var sc struct {
+		Parameters map[string]string `yaml:"parameters"`
+	}
+	if err := yaml.Unmarshal([]byte(est.Config.StorageClass), &sc); err != nil {
+		return ui.Wrap(ui.ExitError, "", fmt.Errorf("reading the calculator's StorageClass parameters: %w", err))
+	}
 	pools := 1
 	if est.Split != nil {
 		pools = est.Split.Pools
@@ -236,6 +243,7 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 		p.RaidLevel, p.MaxVolumesCount = sized.RaidLevel, sized.MaxVolumesCount
 		p.RCacheSizeInMiB, p.RWCacheSizeInMiB = sized.RCacheSizeInMiB, sized.RWCacheSizeInMiB
 		p.EBSVolumes = sized.EBSVolumes
+		p.StorageClass = maps.Clone(sc.Parameters)
 		p.EnableGrafana = mgmt == nil
 		cfg.Pools = append(cfg.Pools, p)
 	}

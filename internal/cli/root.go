@@ -52,7 +52,7 @@ func NewRoot() *cobra.Command {
 		a.withConfig(a.secretsCmd(), true),
 		a.withConfig(a.planCmd(), true), a.withConfig(a.applyCmd(), true), a.withConfig(a.destroyCmd(), true),
 		a.withConfig(a.statusCmd(), true), a.withConfig(a.execCmd(), true), a.withConfig(a.connectCmd(), true),
-		a.withConfig(a.poolCmd(), true), a.withConfig(a.uiCmd(), true), versionCmd(),
+		a.withConfig(a.poolCmd(), true), a.withConfig(a.uiCmd(), true), a.withConfig(a.scCmd(), true), versionCmd(),
 	)
 	root.InitDefaultHelpCmd() // lowercase, like every other command's Short
 	for _, c := range root.Commands() {

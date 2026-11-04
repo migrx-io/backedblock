@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"maps"
 
 	"github.com/spf13/cobra"
 
@@ -69,6 +70,10 @@ func (a *app) poolAddCmd() *cobra.Command {
 			}
 			// An independent pool runs its own Grafana; under mgmt it runs there.
 			p.EnableGrafana = c.Mgmt == nil
+			// Its volumes are the same workload as the first pool's.
+			if len(c.Pools) > 0 {
+				p.StorageClass = maps.Clone(c.Pools[0].StorageClass)
+			}
 			c.Pools = append(c.Pools, p)
 			if errs := c.Validate(); len(errs) > 0 {
 				e := ui.Errf(ui.ExitUsage, "", "pool %q would make the config invalid", name)

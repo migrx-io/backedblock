@@ -74,6 +74,14 @@ bbctl exec <name> --pool pool2 --node 1 --json -- '...'  # a specific node
 bbctl secrets get <name> MGX_GW_ADMIN_PASSWD --json      # password for mgx-cli `login admin`
 ```
 
+For the CSI driver, `bbctl sc <name> --json` gives the helm install as
+`command`, with the API nodes (the management plane's, or without one the
+first pool's), the cluster, the admin login and the StorageClass (cache sizes,
+QoS caps) from the first pool's `storage_class:` in `<name>.bbctl.yaml`; QoS
+caps it leaves out are 125 MB/s and 3000 IOPS. The password is left as
+`bbctl secrets get <name> MGX_GW_ADMIN_PASSWD`. Installing changes the human's
+Kubernetes cluster: show them the command.
+
 Use `exec`, not `connect`. `connect` opens an interactive session, which
 needs a human at a terminal. Each `exec` result carries `status`,
 `exit_code`, `stdout` and `stderr`. SSM truncates each stream at 24 KB.

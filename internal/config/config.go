@@ -107,6 +107,12 @@ type Pool struct {
 	EnableMetrics    bool        `yaml:"enable_metrics"`
 	EnableGrafana    bool        `yaml:"enable_grafana"`
 
+	// StorageClass is the parameters of the pool's Kubernetes StorageClass,
+	// e.g. qos_rw_ios_per_sec or max_cache_r_cache_size, as the CSI driver
+	// names them. config create writes the calculator's; bbctl csi passes
+	// them to the driver's chart. Not used by the modules.
+	StorageClass map[string]string `yaml:"storage_class,omitempty"`
+
 	// Extra is passed through to the pool module as-is, e.g. cache_filesystem,
 	// scheduler_node_down_wait, qos_* or snapshot_* settings.
 	Extra map[string]any `yaml:"extra,omitempty"`
