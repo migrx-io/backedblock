@@ -234,3 +234,10 @@ details.row:not([open]) > summary { margin-bottom: 0; }
 .kpi .gauge { height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; margin-top: 8px; }
 .kpi .gauge > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
 .kpi .psi { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-top: 4px; color: var(--ink-2); }
+
+.hint { border-bottom: 1px dotted var(--muted); cursor: help; }
+.hint-pop {
+  position: fixed; z-index: 30; pointer-events: none; max-width: 480px; white-space: pre-wrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); padding: 6px 10px; font-size: 12px; line-height: 18px; color: var(--ink);
+}

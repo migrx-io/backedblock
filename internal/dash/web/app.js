@@ -459,10 +459,59 @@ function renderStorage(st) {
     <td class="num">${size(v.size_mib)}</td>
     <td class="num">${size(v.rw_mib)}</td>
     <td class="num">${size(v.r_mib)}</td>
+    <td>${qosCell(v.qos)}</td>
+    <td>${paramsCell(v.extra_params)}</td>
     <td>${v.node ? nodeCell(v) : status("–", "none")}</td>
     <td class="mono">${esc(v.bucket || "–")}</td>
-  </tr>`).join("") || `<tr><td colspan="9" class="dim">No volumes reported.</td></tr>`;
+  </tr>`).join("") || `<tr><td colspan="11" class="dim">No volumes reported.</td></tr>`;
 }
+
+// A volume's QoS caps, as the StorageClass names them, in the hint.
+const QOS = [
+  ["r_mbytes_per_sec", "Read", "MB/s"],
+  ["w_mbytes_per_sec", "Write", "MB/s"],
+  ["rw_mbytes_per_sec", "Read or write", "MB/s"],
+  ["rw_ios_per_sec", "IOPS, read + write", "IOPS"],
+];
+
+// qosCell shows the combined caps, with every cap in its hint.
+function qosCell(q) {
+  if (!q) return `<span class="dim">none</span>`;
+  const short = [];
+  if (q.rw_mbytes_per_sec) short.push(`${q.rw_mbytes_per_sec} MB/s`);
+  else if (q.r_mbytes_per_sec || q.w_mbytes_per_sec) short.push(`R ${q.r_mbytes_per_sec || "–"} / W ${q.w_mbytes_per_sec || "–"} MB/s`);
+  if (q.rw_ios_per_sec) short.push(`${q.rw_ios_per_sec} IOPS`);
+  const hint = QOS.map(([k, label, unit]) => `${label}: ${q[k] ? `${q[k]} ${unit}` : "no cap"}`).join("\n");
+  return `<span class="hint" data-hint="${esc(hint)}">${esc(short.join(" · ") || "set")}</span>`;
+}
+
+// paramsCell counts the nbdkit arguments, one per line in the hint.
+function paramsCell(p) {
+  if (!p) return `<span class="dim">none</span>`;
+  const args = p.split(/\s+(?=--)/).filter(Boolean);
+  return `<span class="hint" data-hint="${esc(args.join("\n"))}">${args.length} ${args.length === 1 ? "param" : "params"}</span>`;
+}
+
+// A hint follows the element it explains. It hangs off the page, not the
+// element, so the table's scroll box does not clip it.
+const hintPop = document.createElement("div");
+hintPop.className = "hint-pop";
+hintPop.hidden = true;
+document.body.appendChild(hintPop);
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest?.(".hint");
+  if (!el) {
+    hintPop.hidden = true;
+    return;
+  }
+  hintPop.textContent = el.dataset.hint;
+  hintPop.hidden = false;
+  const r = el.getBoundingClientRect();
+  const w = hintPop.offsetWidth;
+  hintPop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px";
+  hintPop.style.top = r.bottom + 6 + "px";
+});
+document.addEventListener("scroll", () => (hintPop.hidden = true), true);
 
 // --- snapshots ----------------------------------------------------------
 
@@ -688,7 +737,7 @@ function drawChart(metric, data) {
   const el = $(`chart-${metric}`);
   const spec = CHARTS[metric] || UNITS[data.unit] || UNITS.count;
   if (!data.series || data.series.length === 0) {
-    return emptyChart(metric, data.zero ? `All ${data.zero} series stayed at zero in this range.` : "No data yet.");
+    return emptyChart(metric, "No data yet.");
   }
 
   // Recreated when the nodes change, so colors and labels follow them.

@@ -347,15 +347,12 @@ func drawPanel(r *http.Request, pn panel, pools []*pool, sels []string, byVolume
 		errs[i] = errors.Join(lineErrs...)
 	})
 
-	// Lines that stayed at zero are left out, as Grafana's "hide zero
-	// series" does: on a disk panel they are most of the legend.
 	type labeled struct {
 		pool int
 		line Line
 		sr   series
 	}
 	var lines []labeled
-	zero := 0
 	perItem := false
 	for i, p := range pools {
 		if errs[i] != nil {
@@ -364,10 +361,6 @@ func drawPanel(r *http.Request, pn panel, pools []*pool, sels []string, byVolume
 		for j, l := range pn.lines {
 			perItem = perItem || strings.Contains(l.legend, "{{")
 			for _, sr := range res[i][j] {
-				if allZero(sr) {
-					zero++
-					continue
-				}
 				line := Line{Pool: p.name, Label: legend(l.legend, sr.Labels)}
 				if byVolume {
 					line.Volume = sr.Labels["name"]
@@ -387,20 +380,11 @@ func drawPanel(r *http.Request, pn panel, pools []*pool, sels []string, byVolume
 		})
 	}
 	out := grid(start, end, step)
-	out.Unit, out.Zero = pn.unit, zero
+	out.Unit = pn.unit
 	for _, l := range lines {
 		out.addLine(l.line, l.sr)
 	}
 	return out, errs
-}
-
-func allZero(sr series) bool {
-	for _, pt := range sr.Points {
-		if pt[1] != 0 {
-			return false
-		}
-	}
-	return true
 }
 
 // naturalLess orders runs of digits by value: nvme2n1 before nvme10n1.

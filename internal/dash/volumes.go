@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -50,6 +51,22 @@ type Volume struct {
 	Node     string `json:"node,omitempty"`
 	Hostname string `json:"hostname,omitempty"`
 	IP       string `json:"ip,omitempty"`
+	// QoS are the volume's caps, as the storage plugin labels them (MB/s and
+	// IOPS); a cap it leaves unset is missing.
+	QoS map[string]string `json:"qos,omitempty"`
+	// ExtraParams are the nbdkit arguments added on volume start.
+	ExtraParams string `json:"extra_params,omitempty"`
+}
+
+// qosLabels are the status labels that hold a volume's QoS caps.
+var qosLabels = []string{"qos_r_mbytes_per_sec", "qos_w_mbytes_per_sec", "qos_rw_mbytes_per_sec", "qos_rw_ios_per_sec"}
+
+// labelValue is a label the plugin set: it writes Python's None as "None".
+func labelValue(v string) string {
+	if v == "None" || v == "null" {
+		return ""
+	}
+	return strings.TrimSpace(v)
 }
 
 func (s *Server) storage(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +128,15 @@ func (p *pool) volumes(ctx context.Context) ([]Volume, error) {
 		v.SizeMiB, _ = strconv.ParseFloat(l["size"], 64)
 		v.RWMiB, _ = strconv.ParseFloat(l["cache_rw_cache_size"], 64)
 		v.RMiB, _ = strconv.ParseFloat(l["cache_r_cache_size"], 64)
+		for _, k := range qosLabels {
+			if q := labelValue(l[k]); q != "" {
+				if v.QoS == nil {
+					v.QoS = map[string]string{}
+				}
+				v.QoS[strings.TrimPrefix(k, "qos_")] = q
+			}
+		}
+		v.ExtraParams = labelValue(l["extra_params"])
 		out = append(out, v)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

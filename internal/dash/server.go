@@ -419,10 +419,8 @@ var charts = map[string]string{
 type Series struct {
 	Times  []int64 `json:"t"`
 	Series []Line  `json:"series"`
-	// Unit is a panel's unit (see panel), for the page to print values;
-	// Zero counts its lines left out for staying at zero.
+	// Unit is a panel's unit (see panel), for the page to print values.
 	Unit     string   `json:"unit,omitempty"`
-	Zero     int      `json:"zero,omitempty"`
 	Warnings []string `json:"warnings,omitempty"`
 }
 

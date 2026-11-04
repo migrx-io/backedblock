@@ -115,7 +115,7 @@ func (p *fakeProm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if bad {
 				st, v = "ERROR", "0"
 			}
-			add(n.pool, fmt.Sprintf(`"name":"vol-%s","status":%q,"size":"10240","cache_rw_cache_size":"1024","cache_r_cache_size":"2048","storage_bucket":"bkt","sc_node":%q,"ip":%q`,
+			add(n.pool, fmt.Sprintf(`"name":"vol-%s","status":%q,"size":"10240","cache_rw_cache_size":"1024","cache_r_cache_size":"2048","storage_bucket":"bkt","sc_node":%q,"ip":%q,"qos_rw_mbytes_per_sec":"500","qos_rw_ios_per_sec":"16000","qos_w_mbytes_per_sec":"None","extra_params":"--cache-max=1G --readahead","storage_encrypt_secret":"hidden"`,
 				n.host, st, n.uuid, n.ip), v)
 		case strings.HasPrefix(q, "topk(1, snapshot_status"):
 			// One snapshot per node, taken by it; node b's failed.
@@ -337,6 +337,12 @@ func TestVolumes(t *testing.T) {
 	vols := out["volumes"].([]any)
 	if v := vols[0].(map[string]any); v["name"] != "vol-node-a" || v["ready"] != true || v["hostname"] != "node-a" || v["pool"] != "pool1" {
 		t.Errorf("volume a (hostname from core_cluster_nodes): %v", v)
+	}
+	// QoS caps the plugin set, without the None it writes for unset ones, and
+	// none of its other labels (the encryption secret).
+	if v := vols[0].(map[string]any); fmt.Sprint(v["qos"]) != "map[rw_ios_per_sec:16000 rw_mbytes_per_sec:500]" ||
+		v["extra_params"] != "--cache-max=1G --readahead" || strings.Contains(fmt.Sprint(v), "hidden") {
+		t.Errorf("volume a qos and extra params: %v", v)
 	}
 	if v := vols[1].(map[string]any); v["ready"] != false || v["status"] != "ERROR" {
 		t.Errorf("volume b should not be ready: %v", v)

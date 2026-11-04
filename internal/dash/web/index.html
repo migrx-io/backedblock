@@ -100,7 +100,7 @@
           <table class="nodes">
             <thead><tr>
               <th></th><th class="col-pool">Pool</th><th>Volume</th><th>Status</th>
-              <th class="num">Size</th><th class="num">RW cache</th><th class="num">Read cache</th><th>Node</th><th>Bucket</th>
+              <th class="num">Size</th><th class="num">RW cache</th><th class="num">Read cache</th><th>QoS</th><th>Extra params</th><th>Node</th><th>Bucket</th>
             </tr></thead>
             <tbody id="volumes"></tbody>
           </table>
@@ -375,6 +375,10 @@
           <div class="card chart-card">
             <div class="card-head"><h2>Memory</h2><span class="sub">bytes, by use</span></div>
             <div class="chart" id="chart-hp-memory"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Network traffic</h2><span class="sub">bits/s per interface</span></div>
+            <div class="chart" id="chart-hp-net_basic-row" data-panel="net_basic"></div>
           </div>
           <div class="card chart-card">
             <div class="card-head"><h2>Network saturation</h2><span class="sub">% of link speed</span></div>
