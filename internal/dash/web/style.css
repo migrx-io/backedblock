@@ -240,7 +240,7 @@ details.row:not([open]) > summary { margin-bottom: 0; }
 
 .hint { border-bottom: 1px dotted var(--muted); cursor: help; }
 .hint-pop {
-  position: fixed; z-index: 30; pointer-events: none; max-width: 480px; white-space: pre-wrap;
+  position: fixed; z-index: 30; max-width: 480px; white-space: pre-wrap; overflow-y: auto; overscroll-behavior: contain;
   background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); padding: 6px 10px; font-size: 12px; line-height: 18px; color: var(--ink);
 }

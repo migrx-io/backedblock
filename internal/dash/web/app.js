@@ -581,25 +581,67 @@ function paramsCell(p) {
 }
 
 // A hint follows the element it explains. It hangs off the page, not the
-// element, so the table's scroll box does not clip it.
+// element, so the table's scroll box does not clip it. The pointer can move
+// into it, and a long one scrolls; a click on the element keeps it open
+// until a click elsewhere or Escape.
 const hintPop = document.createElement("div");
 hintPop.className = "hint-pop";
 hintPop.hidden = true;
 document.body.appendChild(hintPop);
+let hintFor = null;
+let hintPinned = false;
+let hintTimer = null;
+
+function showHint(el) {
+  clearTimeout(hintTimer);
+  if (hintFor === el && !hintPop.hidden) return;
+  hintFor = el;
+  hintPop.textContent = el.dataset.hint;
+  hintPop.style.maxHeight = "";
+  hintPop.hidden = false;
+  hintPop.scrollTop = 0;
+  // Below the element if it fits, else on the side with more room, as high
+  // as that room and scrolling past it.
+  const r = el.getBoundingClientRect();
+  const below = innerHeight - r.bottom - 14;
+  const above = r.top - 14;
+  const h = hintPop.offsetHeight;
+  const down = h <= below || below >= above;
+  hintPop.style.maxHeight = Math.max(80, down ? below : above) + "px";
+  hintPop.style.left = Math.max(8, Math.min(r.left, innerWidth - hintPop.offsetWidth - 8)) + "px";
+  hintPop.style.top = (down ? r.bottom + 6 : r.top - 6 - hintPop.offsetHeight) + "px";
+}
+
+function hideHint() {
+  clearTimeout(hintTimer);
+  hintPop.hidden = true;
+  hintFor = null;
+  hintPinned = false;
+}
+
 document.addEventListener("mouseover", (e) => {
   const el = e.target.closest?.(".hint");
-  if (!el) {
-    hintPop.hidden = true;
-    return;
+  if (el && !hintPinned) return showHint(el);
+  if (hintPop.contains(e.target)) return clearTimeout(hintTimer);
+  // A moment to cross the gap from the element into the hint.
+  if (!hintPinned && !hintPop.hidden) {
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(hideHint, 200);
   }
-  hintPop.textContent = el.dataset.hint;
-  hintPop.hidden = false;
-  const r = el.getBoundingClientRect();
-  const w = hintPop.offsetWidth;
-  hintPop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px";
-  hintPop.style.top = r.bottom + 6 + "px";
 });
-document.addEventListener("scroll", () => (hintPop.hidden = true), true);
+document.addEventListener("click", (e) => {
+  const el = e.target.closest?.(".hint");
+  if (el) {
+    hintPinned = false;
+    showHint(el);
+    hintPinned = true;
+  } else if (!hintPop.contains(e.target)) {
+    hideHint();
+  }
+});
+document.addEventListener("keydown", (e) => e.key === "Escape" && hideHint());
+// The page scrolling moves the element away; the hint's own scroll does not.
+document.addEventListener("scroll", (e) => e.target !== hintPop && hideHint(), true);
 
 // --- snapshots ----------------------------------------------------------
 
