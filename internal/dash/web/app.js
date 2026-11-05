@@ -44,7 +44,7 @@ function volumeIndex(pool, name) {
 }
 
 // pickedVolumes are the volumes ticked in the Volumes table (vols in the
-// hash, which the Snapshots filter shares), in the order they were ticked.
+// hash), in the order they were ticked.
 function pickedVolumes() {
   return hashParams().vols.split(",").filter(Boolean);
 }
@@ -70,8 +70,6 @@ function showLogin(message) {
   $("tabs").hidden = true;
   $("pool-pick").hidden = true;
   $("pool-pick").open = false;
-  $("pick").hidden = true;
-  $("pick").open = false;
   $("node-pick").hidden = true;
   $("node-pick").open = false;
   $("login-view").hidden = false;
@@ -175,41 +173,6 @@ function hostLabel(n, short) {
   return `${n.hostname || n.ip} (${multiPool() ? n.pool + ", " : ""}${n.ip})`;
 }
 
-// The header picker narrows the Volumes and Snapshots views to some volumes,
-// as Grafana's $volume variable does, and keeps the choice in the hash; both
-// views share it.
-const volumeLabel = (v, short) => (short || !multiPool() ? v.name : `${v.name} (${v.pool})`);
-const PICKS = {
-  snapshots: {
-    param: "vols", title: "Volume", all: "All volumes",
-    items: snapshotVolumes, key: volumeKey, label: volumeLabel,
-  },
-};
-
-// snapshotVolumes are the volumes the listed snapshots were taken of.
-function snapshotVolumes() {
-  const seen = new Map();
-  for (const s of state.snapshots?.snapshots || []) {
-    if (s.volume) seen.set(`${s.pool}/${s.volume}`, { pool: s.pool, name: s.volume });
-  }
-  return [...seen.values()].sort((a, b) => a.pool.localeCompare(b.pool) || a.name.localeCompare(b.name));
-}
-
-// The items picked for a view, in table order; every item when none is
-// picked (or none picked is still listed).
-function picked(view) {
-  const c = PICKS[view];
-  const items = c.items();
-  const want = new Set(hashParams()[c.param].split(","));
-  const out = items.filter((i) => want.has(c.key(i)));
-  return out.length ? out : items;
-}
-
-function allItemsPicked(view) {
-  return picked(view).length === PICKS[view].items().length;
-}
-
-
 document.querySelectorAll("#tabs a").forEach((a) =>
   a.addEventListener("click", (e) => {
     e.preventDefault();
@@ -247,20 +210,10 @@ $("pool-menu").addEventListener("change", (e) => {
   setHash(currentView(), { pool: all ? "all" : pools.join(",") });
 });
 
-$("pick-menu").addEventListener("change", (e) => {
-  if (e.target.value === "*" && !e.target.checked) return clearMenu("pick-menu");
-  cleared.delete("pick-menu");
-  const view = currentView();
-  const c = PICKS[view];
-  const keys = e.target.value === "*" ? [] : [...$("pick-menu").querySelectorAll("input[data-item]:checked")].map((b) => b.value);
-  // As with pools: none or every item ticked is all of them.
-  const all = keys.length === 0 || keys.length === c.items().length;
-  setHash(view, { [c.param]: all ? "" : keys.join(",") });
-});
 
 // Close a menu on a click outside it.
 document.addEventListener("click", (e) => {
-  for (const id of ["pool-pick", "node-pick", "pick"]) if (!$(id).contains(e.target)) $(id).open = false;
+  for (const id of ["pool-pick", "node-pick"]) if (!$(id).contains(e.target)) $(id).open = false;
 });
 
 function renderPools() {
@@ -276,41 +229,6 @@ function renderPools() {
   document.body.classList.toggle("multi-pool", picked.size > 1);
 }
 
-// PICK_ROWS caps a header menu's list, as TABLE_ROWS does the table's.
-const PICK_ROWS = 200;
-
-function renderPick() {
-  const view = currentView();
-  const c = PICKS[view];
-  const items = c ? c.items() : [];
-  $("pick").hidden = !c || items.length === 0 || $("main-view").hidden;
-  if ($("pick").hidden) return;
-  const chosen = picked(view);
-  const keys = new Set(chosen.map(c.key));
-  const all = allItemsPicked(view);
-  $("pick-title").textContent = c.title;
-  $("pick-menu").setAttribute("aria-label", c.title);
-  // A long list shows the picked items, then the first PICK_ROWS that match
-  // the search; under "All" none is ticked, and ticking one picks just it.
-  let list = items;
-  let more = 0;
-  const big = items.length > PICK_ROWS;
-  if (big) {
-    const q = $("pick-search").value.trim().toLowerCase();
-    const rest = items.filter((i) => !(keys.has(c.key(i)) && !all) && (!q || c.label(i).toLowerCase().includes(q)));
-    list = [...(all ? [] : chosen), ...rest.slice(0, PICK_ROWS)];
-    more = rest.length - Math.min(rest.length, PICK_ROWS);
-  }
-  const ticked = (i) => keys.has(c.key(i)) && !(big && all);
-  $("pick-menu").innerHTML =
-    `<label class="all"><input type="checkbox" value="*" ${all ? "checked" : ""}> ${c.all}</label>` +
-    list.map((i) => `<label><input type="checkbox" data-item value="${esc(c.key(i))}" ${ticked(i) ? "checked" : ""}> ${esc(c.label(i))}</label>`).join("") +
-    (more ? `<div class="more">${more} more, type to narrow</div>` : "");
-  $("pick-label").textContent = all ? "All" : chosen.length === 1 ? c.label(chosen[0], true) : `${chosen.length} of ${items.length}`;
-  $("pick-search").placeholder = `Search ${c.title.toLowerCase()}`;
-  keepCleared("pick-menu");
-  searchMenu($("pick"));
-}
 
 // searchMenu shows the menu's items that contain its search text, any case;
 // the "All" item stays. It runs on typing and after each re-render, which
@@ -329,9 +247,7 @@ function searchMenu(d) {
 
 document.querySelectorAll(".pool-pick").forEach((d) => {
   const search = d.querySelector(".pick-search");
-  // A long list is rebuilt for the search; a short one is filtered.
-  const refilter = () => (d.id === "pick" ? renderPick() : searchMenu(d));
-  search.addEventListener("input", refilter);
+  search.addEventListener("input", () => searchMenu(d));
   // Enter picks the only match, Escape clears the search or closes the menu.
   search.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -341,7 +257,7 @@ document.querySelectorAll(".pool-pick").forEach((d) => {
     } else if (e.key === "Escape") {
       if (search.value) {
         search.value = "";
-        refilter();
+        searchMenu(d);
       } else {
         d.open = false;
       }
@@ -352,11 +268,11 @@ document.querySelectorAll(".pool-pick").forEach((d) => {
   d.addEventListener("toggle", () => {
     if (!d.open) {
       const list = d.querySelector(".menu-list");
-      if (cleared.delete(list.id)) list.id === "pool-menu" ? renderPools() : renderPick();
+      if (cleared.delete(list.id)) renderPools();
       return;
     }
     search.value = "";
-    refilter();
+    searchMenu(d);
     search.focus();
   });
 });
@@ -364,7 +280,6 @@ document.querySelectorAll(".pool-pick").forEach((d) => {
 function applyView() {
   renderRange();
   renderPools();
-  renderPick();
   $("node-pick").hidden = currentView() !== "hosts" || $("main-view").hidden;
   const v = currentView();
   document.querySelectorAll(".view").forEach((el) => (el.hidden = el.id !== `view-${v}`));
@@ -398,8 +313,7 @@ async function refresh() {
       const rows = [...document.querySelectorAll("#view-volumes details.row[open]")];
       await Promise.all(rows.map(renderPanelRow));
     } else if (view === "snapshots") {
-      state.snapshots = await api(`/api/snapshots?${poolQuery()}`);
-      renderSnapshots(state.snapshots);
+      renderSnapshots(await api(`/api/snapshots?${poolQuery()}`));
     } else if (view === "hosts") {
       state.overview = await api(`/api/overview?${poolQuery()}`);
       warnings(state.overview.warnings);
@@ -468,7 +382,7 @@ function renderNodeRows() {
     <td><input type="checkbox" ${on ? "checked" : ""} aria-label="Show ${esc(n.hostname || n.ip)} on the charts"></td>
     <td>${on ? `<span class="swatch" style="background:${nodeColor(n.pool, n.ip)}"></span>` : ""}</td>
     <td class="col-pool">${esc(n.pool)}</td>
-    <td><div class="name">${esc(n.hostname || n.ip)}</div><div class="ip">${esc(n.ip)}</div></td>
+    <td><div class="name">${hostLink(n.pool, n.ip, n.hostname || n.ip)}</div><div class="ip">${esc(n.ip)}</div></td>
     <td>${clusterStatus(n)}</td>
     <td>${service(n, "core")}</td>
     <td>${service(n, "cache")}</td>
@@ -559,8 +473,16 @@ function check(ok, good = "ok", bad = "failed") {
   return ok ? status(good, "good") : status(bad, "bad");
 }
 
+// nodeCell is a node's name, linked to its Hosts view, and its IP.
 function nodeCell(n) {
-  return `<div class="name">${esc(n.hostname || n.node)}</div>${n.ip ? `<div class="ip">${esc(n.ip)}</div>` : ""}`;
+  return `<div class="name">${hostLink(n.pool, n.node, n.hostname || n.node)}</div>${n.ip ? `<div class="ip">${esc(n.ip)}</div>` : ""}`;
+}
+
+// hostLink opens a node in the Hosts view. id is its management IP or its
+// UUID: tables of cache nodes and snapshots know only the UUID.
+function hostLink(pool, id, text) {
+  if (!id) return esc(text);
+  return `<a class="host-link" href="#${esc(hashFor("hosts", { host: `${pool}/${id}` }))}" title="Open in Hosts">${esc(text)}</a>`;
 }
 
 function renderCache(c) {
@@ -668,7 +590,6 @@ const TABLE_ROWS = 200;
 
 function renderStorage(st) {
   warnings(st.warnings);
-  renderPick();
   const vols = st.volumes;
   const total = (k) => vols.reduce((a, v) => a + (v[k] || 0), 0);
   const notReady = vols.filter((v) => !v.ready).length;
@@ -820,20 +741,14 @@ document.addEventListener("scroll", (e) => e.target !== hintPop && hideHint(), t
 
 function renderSnapshots(sv) {
   warnings(sv.warnings);
-  renderPick();
-  // The tiles count the snapshots of the picked volumes.
-  let snaps = sv.snapshots;
-  if (!allItemsPicked("snapshots")) {
-    const want = new Set(picked("snapshots").map(volumeKey));
-    snaps = snaps.filter((s) => want.has(`${s.pool}/${s.volume}`));
-  }
+  const snaps = sv.snapshots;
   const ready = snaps.filter((s) => s.ready).length;
   const notReady = snaps.length - ready;
   $("snapshot-kpis").innerHTML = [
     kpi("Snapshots", snaps.length, snaps.length ? "" : "none reported"),
     kpi("Ready", ready, ""),
     kpi("Not ready", notReady, notReady ? "see the table" : "none", notReady ? "bad" : "good"),
-    kpi("Logical size", bytes(snaps.reduce((a, s) => a + (s.logical_bytes || 0), 0)), allItemsPicked("snapshots") ? "all snapshots" : "picked volumes"),
+    kpi("Logical size", bytes(snaps.reduce((a, s) => a + (s.logical_bytes || 0), 0)), "all snapshots"),
   ].join("");
 
   state.snapRows = snaps;
@@ -935,7 +850,8 @@ function hostNodes() {
 function selectedHost() {
   const nodes = hostNodes();
   const want = hashParams().host;
-  const n = nodes.find((n) => nodeKey(n) === want) || nodes[0];
+  // A link from another table may name the node by its UUID.
+  const n = nodes.find((n) => nodeKey(n) === want || (n.uuid && `${n.pool}/${n.uuid}` === want)) || nodes[0];
   return n ? { pool: n.pool, ip: n.ip, node: n } : null;
 }
 
