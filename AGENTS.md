@@ -82,8 +82,8 @@ caps it leaves out are 125 MB/s and 3000 IOPS. The password is left as
 `bbctl secrets get <name> MGX_GW_ADMIN_PASSWD`. Installing changes the human's
 Kubernetes cluster: show them the command.
 
-Use `exec`, not `connect`. `connect` opens an interactive session, which
-needs a human at a terminal. Each `exec` result carries `status`,
+Use `exec`, not `connect` or `cli`. They open interactive sessions (a shell,
+or `mgx-cli` logged in to the cluster), which need a human at a terminal. Each `exec` result carries `status`,
 `exit_code`, `stdout` and `stderr`. SSM truncates each stream at 24 KB.
 
 ## Tear down

@@ -256,6 +256,7 @@ Commands:
 | `bbctl pool add\|remove NAME POOL`, `bbctl pool list NAME` | add, remove or list the pools in a config |
 | `bbctl exec NAME [--all] -- CMD` | run a shell command on nodes via SSM Run Command; returns its output and exit code |
 | `bbctl connect NAME [--forward [LOCAL:]REMOTE]` | interactive shell or port forward via Session Manager, built in |
+| `bbctl cli NAME [--pool POOL] [--node N]` | `mgx-cli` on a management node (or, without one, a pool node) over Session Manager, with `login admin --cluster <cluster> --ns <cluster>` already entered |
 | `bbctl sc NAME` | print the helm command that installs the CSI driver for this storage: API nodes, login, and the pool's `storage_class:` cache sizes and QoS caps |
 | `bbctl ui NAME [--pool POOL]` | a dashboard in the browser with the data of the Grafana dashboards (overview, hosts with their node_exporter metrics, cache, volumes, snapshots), filtered by pool |
 | `bbctl secrets get\|list\|set\|generate\|delete NAME` | the node secrets in SSM, e.g. `get NAME MGX_GW_ADMIN_PASSWD` for `mgx-cli` |
@@ -271,16 +272,21 @@ Prompts are never shown without a TTY. `apply` and `destroy` need
 ### Managing the cluster with mgx-cli
 
 Every node ships `mgx-cli`, and the nodes of a pool are equivalent members of
-one cluster, so any node can drive the whole thing:
+one cluster, so any node can drive the whole thing. `bbctl cli` opens it on a
+management node (on a pool node when there is no management plane) and enters
+the login; type the password and you are in:
 
 ```
 $ bbctl secrets get prod MGX_GW_ADMIN_PASSWD    # the login password
-$ bbctl connect prod                            # shell on a node over Session Manager
-$ mgx-cli
+$ bbctl cli prod
+password: bbctl secrets get prod MGX_GW_ADMIN_PASSWD
 mgx-core:127.0.0.1:nologin> login admin --cluster main --ns main
 Password:
 mgx-core:127.0.0.1:main:main:admin> cluster nodes list
 ```
+
+`--pool pool2` or `--node 1` picks another node, `--user` another login. By
+hand, it is `bbctl connect prod`, then `mgx-cli` and the same `login`.
 
 Every command set (nodes, pools, volumes, snapshots) is documented in the
 [CLI reference](https://backedblock.io/docs/cli).

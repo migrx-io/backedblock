@@ -329,7 +329,7 @@ func (a *app) forwardTo(ctx context.Context, id string, remote, local int) error
 		return ui.Wrap(ui.ExitAWS, "", err)
 	}
 	// Does not return on success: the session ends the process.
-	if err := c.Session(ctx, id, remote, local, a.profile); err != nil {
+	if err := c.Session(ctx, id, "", remote, local, a.profile); err != nil {
 		return ui.Wrap(ui.ExitAWS, "", err)
 	}
 	return nil
@@ -376,7 +376,7 @@ func (a *app) connectCmd() *cobra.Command {
 				ui.Logf("connecting to %s", ids[0])
 			}
 			// Does not return on success: the session ends the process.
-			if err := d.AWS.Session(ctx, ids[0], remote, local, a.profile); err != nil {
+			if err := d.AWS.Session(ctx, ids[0], "", remote, local, a.profile); err != nil {
 				return ui.Wrap(ui.ExitAWS, "check `bbctl status "+d.Cfg.Name+"`: the node must be running with ssm=Online", err)
 			}
 			return nil

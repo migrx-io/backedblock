@@ -15,7 +15,7 @@ func TestCommands(t *testing.T) {
 		}
 		got = append(got, c.Name())
 	}
-	want := []string{"apply", "config", "connect", "destroy", "exec", "help", "init", "plan", "pool", "sc", "secrets", "status", "ui", "version"}
+	want := []string{"apply", "cli", "config", "connect", "destroy", "exec", "help", "init", "plan", "pool", "sc", "secrets", "status", "ui", "version"}
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		t.Errorf("commands = %v, want %v", got, want)
