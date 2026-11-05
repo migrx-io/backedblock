@@ -16,8 +16,8 @@ import (
 // volumes, topk keeps only a snapshot's newest label set.
 const snapshotsQuery = `topk(1, snapshot_status{%[1]s} and ignoring(__name__) (timestamp(snapshot_status{%[1]s}) == on(name, storage_pool) group_left() max by(name, storage_pool) (timestamp(snapshot_status{%[1]s})))) by (name, storage_pool)`
 
-// snapshotStats are the stat panels' series, summed and counted per metric
-// in one query each, so the averages hold across pools.
+// snapshotStats are each snapshot's transfer stats, one series per metric,
+// labelled with the snapshot's name and storage pool.
 const snapshotStats = `__name__=~"snapshot_(size|errors|fatal_error|retry_error|server_side_copy_bytes|bytes|elapsed_time|transfer_time|total_transfers|speed)"`
 
 // SnapshotsView is the Snapshots tab.
@@ -28,26 +28,18 @@ type SnapshotsView struct {
 	Warnings []string `json:"warnings,omitempty"`
 }
 
-// SnapshotSummary is the dashboard's stat panels. Sizes are in bytes (the
-// plugin reports the logical size in MB), times in seconds, speed in bytes
-// per second. The averages are over the snapshots reporting each.
+// SnapshotSummary is the tab's tiles. The logical size is in bytes.
 type SnapshotSummary struct {
-	Snapshots         int      `json:"snapshots"`
-	Ready             int      `json:"ready"`
-	NotReady          int      `json:"not_ready"`
-	LogicalBytes      float64  `json:"logical_bytes"`
-	TransferErrors    float64  `json:"transfer_errors"`
-	FatalErrors       float64  `json:"fatal_errors"`
-	RetryErrors       float64  `json:"retry_errors"`
-	ServerSideBytes   float64  `json:"server_side_bytes"`
-	ServerSideShare   *float64 `json:"server_side_share,omitempty"`
-	AvgElapsed        *float64 `json:"avg_elapsed,omitempty"`
-	AvgTransferTime   *float64 `json:"avg_transfer_time,omitempty"`
-	AvgTotalTransfers *float64 `json:"avg_total_transfers,omitempty"`
-	AvgSpeed          *float64 `json:"avg_speed,omitempty"`
+	Snapshots    int     `json:"snapshots"`
+	Ready        int     `json:"ready"`
+	NotReady     int     `json:"not_ready"`
+	LogicalBytes float64 `json:"logical_bytes"`
 }
 
-// Snapshot is one row of the snapshot table.
+// Snapshot is one row of the snapshot table, with its transfer stats. Sizes
+// are in bytes (the plugin reports the logical size in MB), times in
+// seconds, speed in bytes per second; a stat the plugin did not report is
+// missing.
 type Snapshot struct {
 	Pool        string `json:"pool"`
 	Name        string `json:"name"`
@@ -60,10 +52,45 @@ type Snapshot struct {
 	// Node is the UUID of the node that took the snapshot, Hostname its name.
 	Node     string `json:"node,omitempty"`
 	Hostname string `json:"hostname,omitempty"`
+
+	LogicalBytes    *float64 `json:"logical_bytes,omitempty"`
+	Bytes           *float64 `json:"bytes,omitempty"`
+	ServerSideBytes *float64 `json:"server_side_bytes,omitempty"`
+	TransferErrors  *float64 `json:"transfer_errors,omitempty"`
+	FatalErrors     *float64 `json:"fatal_errors,omitempty"`
+	RetryErrors     *float64 `json:"retry_errors,omitempty"`
+	Elapsed         *float64 `json:"elapsed,omitempty"`
+	TransferTime    *float64 `json:"transfer_time,omitempty"`
+	Transfers       *float64 `json:"transfers,omitempty"`
+	Speed           *float64 `json:"speed,omitempty"`
 }
 
-// snapshotTotals is one pool's sum and count of each stat series, by metric.
-type snapshotTotals struct{ sum, count map[string]float64 }
+// stat is the Snapshot field each stat metric fills.
+func (sn *Snapshot) stat(metric string) **float64 {
+	switch metric {
+	case "snapshot_size":
+		return &sn.LogicalBytes
+	case "snapshot_bytes":
+		return &sn.Bytes
+	case "snapshot_server_side_copy_bytes":
+		return &sn.ServerSideBytes
+	case "snapshot_errors":
+		return &sn.TransferErrors
+	case "snapshot_fatal_error":
+		return &sn.FatalErrors
+	case "snapshot_retry_error":
+		return &sn.RetryErrors
+	case "snapshot_elapsed_time":
+		return &sn.Elapsed
+	case "snapshot_transfer_time":
+		return &sn.TransferTime
+	case "snapshot_total_transfers":
+		return &sn.Transfers
+	case "snapshot_speed":
+		return &sn.Speed
+	}
+	return nil
+}
 
 func (s *Server) snapshots(w http.ResponseWriter, r *http.Request) {
 	pools, err := s.selected(r)
@@ -74,24 +101,16 @@ func (s *Server) snapshots(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
 	rows := make([][]Snapshot, len(pools))
-	totals := make([]snapshotTotals, len(pools))
 	errs := make([]error, len(pools))
-	each(pools, func(i int, p *pool) { rows[i], totals[i], errs[i] = p.snapshots(ctx) })
+	each(pools, func(i int, p *pool) { rows[i], errs[i] = p.snapshots(ctx) })
 
 	v := SnapshotsView{Snapshots: []Snapshot{}}
-	sum, count := map[string]float64{}, map[string]float64{}
 	for i, p := range pools {
 		if errs[i] != nil {
 			v.Warnings = append(v.Warnings, s.warn(p, errs[i]))
 			continue
 		}
 		v.Snapshots = append(v.Snapshots, rows[i]...)
-		for k, x := range totals[i].sum {
-			sum[k] += x
-		}
-		for k, x := range totals[i].count {
-			count[k] += x
-		}
 	}
 	m := &v.Summary
 	for _, sn := range v.Snapshots {
@@ -101,65 +120,57 @@ func (s *Server) snapshots(w http.ResponseWriter, r *http.Request) {
 		} else {
 			m.NotReady++
 		}
-	}
-	m.LogicalBytes = sum["snapshot_size"] * 1e6
-	m.TransferErrors, m.FatalErrors, m.RetryErrors = sum["snapshot_errors"], sum["snapshot_fatal_error"], sum["snapshot_retry_error"]
-	m.ServerSideBytes = sum["snapshot_server_side_copy_bytes"]
-	if b := sum["snapshot_bytes"]; b > 0 {
-		share := 100 * m.ServerSideBytes / b
-		m.ServerSideShare = &share
-	}
-	avg := func(metric string) *float64 {
-		if count[metric] == 0 {
-			return nil
+		if sn.LogicalBytes != nil {
+			m.LogicalBytes += *sn.LogicalBytes
 		}
-		a := sum[metric] / count[metric]
-		return &a
 	}
-	m.AvgElapsed, m.AvgTransferTime = avg("snapshot_elapsed_time"), avg("snapshot_transfer_time")
-	m.AvgTotalTransfers, m.AvgSpeed = avg("snapshot_total_transfers"), avg("snapshot_speed")
 	writeJSON(w, http.StatusOK, v)
 }
 
-// snapshots is one pool's snapshot rows, ordered by name, and its stat
-// totals.
-func (p *pool) snapshots(ctx context.Context) ([]Snapshot, snapshotTotals, error) {
-	t := snapshotTotals{map[string]float64{}, map[string]float64{}}
+// snapshots is one pool's snapshot rows, ordered by name, with their stats.
+func (p *pool) snapshots(ctx context.Context) ([]Snapshot, error) {
 	if p.prom == nil {
-		return nil, t, errNoMetrics
+		return nil, errNoMetrics
 	}
 	sel := p.selector()
-	stats := "{" + matchers(snapshotStats, sel) + "}"
 	var (
-		wg                sync.WaitGroup
-		res, sums, counts []sample
-		hostnames         map[string]string
-		errs              [4]error
+		wg         sync.WaitGroup
+		res, stats []sample
+		hostnames  map[string]string
+		errs       [3]error
 	)
-	wg.Add(4)
+	wg.Add(3)
 	go func() { defer wg.Done(); res, errs[0] = p.prom.query(ctx, fmt.Sprintf(snapshotsQuery, sel)) }()
-	go func() { defer wg.Done(); sums, errs[1] = p.prom.query(ctx, "sum by(__name__) ("+stats+")") }()
-	go func() { defer wg.Done(); counts, errs[2] = p.prom.query(ctx, "count by(__name__) ("+stats+")") }()
-	go func() { defer wg.Done(); hostnames, errs[3] = p.hostnames(ctx) }()
+	go func() { defer wg.Done(); stats, errs[1] = p.prom.query(ctx, "{"+matchers(snapshotStats, sel)+"}") }()
+	go func() { defer wg.Done(); hostnames, errs[2] = p.hostnames(ctx) }()
 	wg.Wait()
 	if err := errors.Join(errs[:]...); err != nil {
-		return nil, t, err
-	}
-	for _, x := range sums {
-		t.sum[x.Labels["__name__"]] = x.Value
-	}
-	for _, x := range counts {
-		t.count[x.Labels["__name__"]] = x.Value
+		return nil, err
 	}
 	out := make([]Snapshot, 0, len(res))
+	index := map[[2]string]int{}
 	for _, x := range res {
 		l := x.Labels
+		index[[2]string{l["name"], l["storage_pool"]}] = len(out)
 		out = append(out, Snapshot{
 			Pool: p.name, Name: l["name"], StoragePool: l["storage_pool"], Kind: l["kind"],
 			Status: l["status"], Ready: l["status"] == "READY", Incremental: l["incremental"],
 			Volume: l["volume"], Node: l["sc_node"], Hostname: hostnames[l["sc_node"]],
 		})
 	}
+	for _, x := range stats {
+		i, ok := index[[2]string{x.Labels["name"], x.Labels["storage_pool"]}]
+		if !ok {
+			continue
+		}
+		if f := out[i].stat(x.Labels["__name__"]); f != nil {
+			v := x.Value
+			if x.Labels["__name__"] == "snapshot_size" {
+				v *= 1e6
+			}
+			*f = &v
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, t, nil
+	return out, nil
 }

@@ -410,8 +410,8 @@ func scrapedHost(l map[string]string) string {
 // arbitrary queries. cpu and ram are the "Core" dashboard's, as each node's
 // core reports them.
 var charts = map[string]string{
-	"cpu": "core_cluster_system_cpu{{sel}}",
-	"ram": "core_cluster_system_ram{{sel}}",
+	"cpu": hi("core_cluster_system_cpu{{sel}}"),
+	"ram": hi("core_cluster_system_ram{{sel}}"),
 }
 
 // Series is one chart's data, aligned for uPlot: one shared time axis and a
@@ -456,7 +456,7 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 		}
 		// A rate needs at least four scrapes, and must span the step so no
 		// sample falls between points.
-		res[i], errs[i] = p.prom.queryRange(r.Context(), expand(expr, p.selector(), max(step, time.Minute)), start, end, step)
+		res[i], errs[i] = p.prom.queryRange(r.Context(), expand(expr, p.selector(), max(step, time.Minute), step), start, end, step)
 	})
 	out := grid(start, end, step)
 	for i, p := range pools {
@@ -469,16 +469,25 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// window is a chart's time range from ?range= (seconds, an hour by default)
-// and its step: about 300 points, never finer than the 15s scrape interval.
+// window is a chart's time range and its step: about 300 points, never finer
+// than the 15s scrape interval. The range is ?from=&to= (unix seconds), a
+// window the page zoomed to, or else the last ?range= seconds, an hour by
+// default. Either spans a minute to a week.
 func window(r *http.Request) (start, end time.Time, step time.Duration) {
-	rng, err := strconv.Atoi(r.URL.Query().Get("range"))
-	if err != nil || rng < 60 || rng > 7*24*3600 {
-		rng = 3600
+	q := r.URL.Query()
+	now := time.Now().Truncate(time.Second)
+	from, errFrom := strconv.ParseInt(q.Get("from"), 10, 64)
+	to, errTo := strconv.ParseInt(q.Get("to"), 10, 64)
+	if errFrom == nil && errTo == nil && to-from >= 60 && to-from <= 7*24*3600 {
+		start, end = time.Unix(from, 0), time.Unix(min(to, now.Unix()), 0)
+	} else {
+		rng, err := strconv.Atoi(q.Get("range"))
+		if err != nil || rng < 60 || rng > 7*24*3600 {
+			rng = 3600
+		}
+		start, end = now.Add(-time.Duration(rng)*time.Second), now
 	}
-	end = time.Now().Truncate(time.Second)
-	start = end.Add(-time.Duration(rng) * time.Second)
-	step = max(time.Duration(rng)*time.Second/300, 15*time.Second).Truncate(time.Second)
+	step = max(end.Sub(start)/300, 15*time.Second).Truncate(time.Second)
 	return start, end, step
 }
 

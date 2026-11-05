@@ -78,17 +78,6 @@ func (p *fakeProm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[%s]}}`, strings.Join(rows, ","))
 		return
 	}
-	// Each pool's snapshot stats, one series per metric.
-	for _, pool := range []string{"pool1", "pool2"} {
-		switch {
-		case strings.HasPrefix(q, "sum by(__name__)"):
-			for m, v := range map[string]string{"snapshot_size": "100", "snapshot_bytes": "1000", "snapshot_server_side_copy_bytes": "250", "snapshot_errors": "1", "snapshot_elapsed_time": "30"} {
-				add(pool, fmt.Sprintf(`"__name__":%q`, m), v)
-			}
-		case strings.HasPrefix(q, "count by(__name__)"):
-			add(pool, `"__name__":"snapshot_elapsed_time"`, "2")
-		}
-	}
 	for _, n := range fakeNodes {
 		bad := n.host == "node-b"
 		switch {
@@ -117,6 +106,16 @@ func (p *fakeProm) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			add(n.pool, fmt.Sprintf(`"name":"vol-%s","status":%q,"size":"10240","cache_rw_cache_size":"1024","cache_r_cache_size":"2048","storage_bucket":"bkt","sc_node":%q,"ip":%q,"qos_rw_mbytes_per_sec":"500","qos_rw_ios_per_sec":"16000","qos_w_mbytes_per_sec":"None","extra_params":"--cache-max=1G --readahead","storage_encrypt_secret":"hidden"`,
 				n.host, st, n.uuid, n.ip), v)
+		case strings.HasPrefix(q, `{__name__=~"snapshot_`):
+			// Each snapshot's stats; node b's has no speed.
+			for m, v := range map[string]string{"snapshot_size": "100", "snapshot_bytes": "1000", "snapshot_server_side_copy_bytes": "250", "snapshot_errors": "1", "snapshot_elapsed_time": "30"} {
+				add(n.pool, fmt.Sprintf(`"__name__":%q,"name":"snap-%s","storage_pool":"sp1"`, m, n.host), v)
+			}
+			if !bad {
+				add(n.pool, fmt.Sprintf(`"__name__":"snapshot_speed","name":"snap-%s","storage_pool":"sp1"`, n.host), "5")
+			}
+			// A stat of a snapshot no longer listed is left out.
+			add(n.pool, `"__name__":"snapshot_size","name":"gone","storage_pool":"sp1"`, "7")
 		case strings.HasPrefix(q, "topk(1, snapshot_status"):
 			// One snapshot per node, taken by it; node b's failed.
 			st := map[bool]string{true: "FAILED", false: "READY"}[bad]
@@ -359,7 +358,7 @@ func TestVolumes(t *testing.T) {
 		t.Errorf("volume series: %v", out)
 	}
 	last := prom.queries[len(prom.queries)-1]
-	if !strings.Contains(last, `sum by(name) (spdk_volume_bytes_read{pool="pool2"}) / 15`) {
+	if !strings.Contains(last, `sum by(name) (max_over_time(spdk_volume_bytes_read{pool="pool2"}[`) {
 		t.Errorf("volume query: %s", last)
 	}
 	// A volume's lines sit together, ordered by label.
@@ -386,7 +385,7 @@ func TestVolumePanels(t *testing.T) {
 			t.Errorf("%s: no unit or lines", name)
 		}
 		for _, l := range p.lines {
-			q := expand(l.expr, `pool="p"`, time.Minute)
+			q := expand(l.expr, `pool="p"`, time.Minute, 15*time.Second)
 			if n := strings.Count(l.expr, "{{sel}}"); n == 0 || strings.Count(q, `{pool="p"}`) != n {
 				t.Errorf("%s: a metric without the pool matcher: %s", name, q)
 			}
@@ -403,27 +402,33 @@ func TestSnapshots(t *testing.T) {
 		t.Fatalf("snapshots: %d %v", code, out)
 	}
 	sum := out["summary"].(map[string]any)
-	want := map[string]float64{"snapshots": 2, "ready": 1, "not_ready": 1, "logical_bytes": 100e6, "transfer_errors": 1,
-		"server_side_bytes": 250, "server_side_share": 25, "avg_elapsed": 15}
+	want := map[string]float64{"snapshots": 2, "ready": 1, "not_ready": 1, "logical_bytes": 200e6}
 	for k, v := range want {
 		if sum[k] != v {
 			t.Errorf("summary %s = %v, want %v", k, sum[k], v)
 		}
 	}
-	if _, ok := sum["avg_speed"]; ok {
-		t.Errorf("avg_speed without snapshot_speed series: %v", sum["avg_speed"])
-	}
 	snaps := out["snapshots"].([]any)
-	if s := snaps[0].(map[string]any); s["name"] != "snap-node-a" || s["ready"] != true || s["hostname"] != "node-a" || s["volume"] != "vol-node-a" {
+	s := snaps[0].(map[string]any)
+	if s["name"] != "snap-node-a" || s["ready"] != true || s["hostname"] != "node-a" || s["volume"] != "vol-node-a" {
 		t.Errorf("snapshot a (hostname from core_cluster_nodes): %v", s)
 	}
-	if s := snaps[1].(map[string]any); s["ready"] != false || s["status"] != "FAILED" {
+	stats := map[string]float64{"logical_bytes": 100e6, "bytes": 1000, "server_side_bytes": 250, "transfer_errors": 1, "elapsed": 30, "speed": 5}
+	for k, v := range stats {
+		if s[k] != v {
+			t.Errorf("snapshot a %s = %v, want %v", k, s[k], v)
+		}
+	}
+	s = snaps[1].(map[string]any)
+	if s["ready"] != false || s["status"] != "FAILED" {
 		t.Errorf("snapshot b should not be ready: %v", s)
 	}
+	if _, ok := s["speed"]; ok {
+		t.Errorf("speed without a snapshot_speed series: %v", s["speed"])
+	}
 
-	// Across pools the averages weigh each pool by its series.
 	_, out = c.do("GET", "/api/snapshots?pool=all", "")
-	if sum := out["summary"].(map[string]any); sum["snapshots"] != 3.0 || sum["avg_elapsed"] != 15.0 || sum["logical_bytes"] != 200e6 {
+	if sum := out["summary"].(map[string]any); sum["snapshots"] != 3.0 || sum["logical_bytes"] != 300e6 {
 		t.Errorf("all pools summary: %v", sum)
 	}
 }
@@ -474,8 +479,8 @@ func TestHostPanels(t *testing.T) {
 			t.Errorf("%s: no unit or lines", name)
 		}
 		for _, l := range p.lines {
-			q := expand(l.expr, `pool="p"`, time.Minute)
-			if strings.Contains(q, "{sel}") || strings.Contains(q, "{win}") {
+			q := expand(l.expr, `pool="p"`, time.Minute, 15*time.Second)
+			if strings.Contains(q, "{sel}") || strings.Contains(q, "{win}") || strings.Contains(q, "{step}") {
 				t.Errorf("%s: unexpanded %s", name, q)
 			}
 			if strings.Count(q, `pool="p"`) != strings.Count(q, "node_") {
@@ -499,8 +504,9 @@ func TestExpand(t *testing.T) {
 		{`m{{sel}}`, `pool="a"`, `m{pool="a"}`},
 		{`m{x="1"{sel}}[{win}]`, ``, `m{x="1"}[1m0s]`},
 		{`m{x="1"{sel}}[{win}]`, `pool="a"`, `m{x="1",pool="a"}[1m0s]`},
+		{`max_over_time(m{{sel}}[{step}])`, `pool="a"`, `max_over_time(m{pool="a"}[1m12s])`},
 	} {
-		if got := expand(c.in, c.sel, time.Minute); got != c.want {
+		if got := expand(c.in, c.sel, time.Minute, 72*time.Second); got != c.want {
 			t.Errorf("expand(%q, %q) = %q, want %q", c.in, c.sel, got, c.want)
 		}
 	}
@@ -535,5 +541,27 @@ func TestScrapedHost(t *testing.T) {
 		if got := scrapedHost(l); got != want {
 			t.Errorf("%s: got %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestWindow(t *testing.T) {
+	get := func(q string) (time.Time, time.Time, time.Duration) {
+		return window(httptest.NewRequest("GET", "/api/series?"+q, nil))
+	}
+	start, end, step := get("range=21600")
+	if end.Sub(start) != 6*time.Hour || step != 72*time.Second {
+		t.Errorf("range=6h: %v to %v, step %v", start, end, step)
+	}
+	// A zoomed window: its own span, at 15s for a few minutes.
+	start, end, step = get("from=1700000000&to=1700000600&range=86400")
+	if start.Unix() != 1700000000 || end.Unix() != 1700000600 || step != 15*time.Second {
+		t.Errorf("from/to: %v to %v, step %v", start, end, step)
+	}
+	// Under a minute, or backwards, falls back to range.
+	if start, end, _ = get("from=1700000000&to=1700000030&range=3600"); end.Sub(start) != time.Hour {
+		t.Errorf("30s window: %v", end.Sub(start))
+	}
+	if start, end, _ = get("from=1700000600&to=1700000000"); end.Sub(start) != time.Hour {
+		t.Errorf("backwards window: %v", end.Sub(start))
 	}
 }

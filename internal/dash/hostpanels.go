@@ -28,8 +28,9 @@ const panelDisks = `device=~"[a-z]+|nvme[0-9]+n[0-9]+|md[0-9]+"`
 // Interfaces in the network panels: no loopback or virtual ones.
 const netDevices = `device!~"lo|veth.*|docker.*|br-.*|virbr.*"`
 
-// Filesystems in the space panels: real ones, not tmpfs or snap images.
-const panelFS = `fstype!~"rootfs|tmpfs|squashfs|overlay|ramfs"`
+// Filesystems in the space panels: all but rootfs, as in Node Exporter Full
+// (so tmpfs mounts such as /run show too).
+const panelFS = `device!~"rootfs"`
 
 // quickQueries are the "Quick CPU / Mem / Disk" row, one value each.
 var quickQueries = map[string]string{
@@ -48,6 +49,15 @@ var quickQueries = map[string]string{
 	"root_total": `node_filesystem_size_bytes{mountpoint="/",fstype!="rootfs"{sel}}`,
 	"uptime":     `node_time_seconds{{sel}} - node_boot_time_seconds{{sel}}`,
 }
+
+// hi and lo are a gauge's highest and lowest value in each chart step. A
+// chart point is the latest sample at its time, so over 6h (a 72s step) it
+// would skip most scrapes and a one-scrape spike with them; the subquery
+// evaluates the expression at every scrape in the step. lo is for free and
+// available values, where the dip is the news. Rates need neither: their
+// window spans the step. Totals and limits stay as sampled.
+func hi(expr string) string { return `max_over_time((` + expr + `)[{step}:15s])` }
+func lo(expr string) string { return `min_over_time((` + expr + `)[{step}:15s])` }
 
 // line is one query of a panel; legend may name labels as {{label}}.
 type line struct{ expr, legend string }
@@ -82,17 +92,17 @@ var hostPanels = map[string]panel{
 	}},
 	"mem_basic": {"bytes", []line{
 		{mem("MemTotal"), "Total"},
-		{mem("MemTotal") + " - " + mem("MemFree") + " - (" + mem("Cached") + " + " + mem("Buffers") + " + " + mem("SReclaimable") + ")", "Used"},
-		{mem("Cached") + " + " + mem("Buffers") + " + " + mem("SReclaimable"), "Cache + buffer"},
-		{mem("MemFree"), "Free"},
-		{mem("SwapTotal") + " - " + mem("SwapFree"), "Swap used"},
+		{hi(mem("MemTotal") + " - " + mem("MemFree") + " - (" + mem("Cached") + " + " + mem("Buffers") + " + " + mem("SReclaimable") + ")"), "Used"},
+		{hi(mem("Cached") + " + " + mem("Buffers") + " + " + mem("SReclaimable")), "Cache + buffer"},
+		{lo(mem("MemFree")), "Free"},
+		{hi(mem("SwapTotal") + " - " + mem("SwapFree")), "Swap used"},
 	}},
 	"net_basic": {"bits", []line{
 		{`8 * rate(node_network_receive_bytes_total{` + netDevices + `{sel}}[{win}])`, "{{device}} rx"},
 		{`8 * rate(node_network_transmit_bytes_total{` + netDevices + `{sel}}[{win}])`, "{{device}} tx"},
 	}},
 	"disk_space_basic": {"percent", []line{
-		{`100 * (node_filesystem_size_bytes{` + panelFS + `{sel}} - node_filesystem_avail_bytes{` + panelFS + `{sel}}) / node_filesystem_size_bytes{` + panelFS + `{sel}}`, "{{mountpoint}}"},
+		{hi(`100 * (node_filesystem_size_bytes{` + panelFS + `{sel}} - node_filesystem_avail_bytes{` + panelFS + `{sel}}) / node_filesystem_size_bytes{` + panelFS + `{sel}}`), "{{mountpoint}}"},
 	}},
 
 	// CPU / Memory / Net / Disk
@@ -107,15 +117,15 @@ var hostPanels = map[string]panel{
 		{cpuMode(`mode="idle"`), "Idle"},
 	}},
 	"memory": {"bytes", []line{
-		{mem("MemTotal") + " - " + mem("MemFree") + " - " + mem("Buffers") + " - " + mem("Cached") + " - " + mem("Slab") + " - " + mem("PageTables") + " - " + mem("SwapCached"), "Apps"},
-		{mem("PageTables"), "PageTables"},
-		{mem("SwapCached"), "SwapCache"},
-		{mem("Slab"), "Slab"},
-		{mem("Cached"), "Cache"},
-		{mem("Buffers"), "Buffers"},
-		{mem("MemFree"), "Unused"},
-		{mem("SwapTotal") + " - " + mem("SwapFree"), "Swap"},
-		{mem("HardwareCorrupted"), "Hardware corrupted"},
+		{hi(mem("MemTotal") + " - " + mem("MemFree") + " - " + mem("Buffers") + " - " + mem("Cached") + " - " + mem("Slab") + " - " + mem("PageTables") + " - " + mem("SwapCached")), "Apps"},
+		{hi(mem("PageTables")), "PageTables"},
+		{hi(mem("SwapCached")), "SwapCache"},
+		{hi(mem("Slab")), "Slab"},
+		{hi(mem("Cached")), "Cache"},
+		{hi(mem("Buffers")), "Buffers"},
+		{lo(mem("MemFree")), "Unused"},
+		{hi(mem("SwapTotal") + " - " + mem("SwapFree")), "Swap"},
+		{hi(mem("HardwareCorrupted")), "Hardware corrupted"},
 	}},
 	"net_saturation": {"percent", []line{
 		{`100 * rate(node_network_receive_bytes_total{` + netDevices + `{sel}}[{win}]) / ignoring(speed) node_network_speed_bytes{speed!="-1",` + netDevices + `{sel}}`, "{{device}} rx"},
@@ -130,12 +140,11 @@ var hostPanels = map[string]panel{
 		{diskRate("written_bytes_total"), "{{device}} write"},
 	}},
 	"fs_avail": {"bytes", []line{
-		{`node_filesystem_avail_bytes{` + panelFS + `{sel}}`, "{{mountpoint}}"},
-		{`node_filesystem_free_bytes{` + panelFS + `{sel}}`, "{{mountpoint}} free"},
-		{`node_filesystem_size_bytes{` + panelFS + `{sel}}`, "{{mountpoint}} size"},
+		// Grafana's panel also has free and size, hidden.
+		{lo(`node_filesystem_avail_bytes{` + panelFS + `{sel}}`), "{{mountpoint}}"},
 	}},
 	"fs_used": {"bytes", []line{
-		{`node_filesystem_size_bytes{` + panelFS + `{sel}} - node_filesystem_avail_bytes{` + panelFS + `{sel}}`, "{{mountpoint}}"},
+		{hi(`node_filesystem_size_bytes{` + panelFS + `{sel}} - node_filesystem_avail_bytes{` + panelFS + `{sel}}`), "{{mountpoint}}"},
 	}},
 	"disk_util": {"percent", []line{
 		{`100 * ` + diskRate("io_time_seconds_total"), "{{device}}"},
@@ -151,62 +160,62 @@ var hostPanels = map[string]panel{
 
 	// Memory Meminfo
 	"mem_committed": {"bytes", []line{
-		{mem("Committed_AS"), "Committed_AS"},
+		{hi(mem("Committed_AS")), "Committed_AS"},
 		{mem("CommitLimit"), "CommitLimit"},
 	}},
 	"mem_dirty": {"bytes", []line{
-		{mem("Dirty"), "Dirty"},
-		{mem("Writeback"), "Writeback"},
-		{mem("WritebackTmp"), "WritebackTmp"},
-		{mem("NFS_Unstable"), "NFS unstable"},
+		{hi(mem("Dirty")), "Dirty"},
+		{hi(mem("Writeback")), "Writeback"},
+		{hi(mem("WritebackTmp")), "WritebackTmp"},
+		{hi(mem("NFS_Unstable")), "NFS unstable"},
 	}},
 	"mem_slab": {"bytes", []line{
-		{mem("SUnreclaim"), "SUnreclaim"},
-		{mem("SReclaimable"), "SReclaimable"},
+		{hi(mem("SUnreclaim")), "SUnreclaim"},
+		{hi(mem("SReclaimable")), "SReclaimable"},
 	}},
 	"mem_shared": {"bytes", []line{
-		{mem("Mapped"), "Mapped"},
-		{mem("Shmem"), "Shmem"},
-		{mem("ShmemHugePages"), "ShmemHugePages"},
-		{mem("ShmemPmdMapped"), "PMD mapped"},
+		{hi(mem("Mapped")), "Mapped"},
+		{hi(mem("Shmem")), "Shmem"},
+		{hi(mem("ShmemHugePages")), "ShmemHugePages"},
+		{hi(mem("ShmemPmdMapped")), "PMD mapped"},
 	}},
 	"mem_lru": {"percent", []line{
-		{`100 * ` + mem("Inactive") + ` / ` + mem("MemTotal"), "Inactive"},
-		{`100 * ` + mem("Active") + ` / ` + mem("MemTotal"), "Active"},
+		{hi(`100 * ` + mem("Inactive") + ` / ` + mem("MemTotal")), "Inactive"},
+		{hi(`100 * ` + mem("Active") + ` / ` + mem("MemTotal")), "Active"},
 	}},
 	"mem_lru_detail": {"bytes", []line{
-		{mem("Inactive_file"), "Inactive_file"},
-		{mem("Inactive_anon"), "Inactive_anon"},
-		{mem("Active_file"), "Active_file"},
-		{mem("Active_anon"), "Active_anon"},
+		{hi(mem("Inactive_file")), "Inactive_file"},
+		{hi(mem("Inactive_anon")), "Inactive_anon"},
+		{hi(mem("Active_file")), "Active_file"},
+		{hi(mem("Active_anon")), "Active_anon"},
 	}},
 	"mem_kernel": {"bytes", []line{
-		{mem("KernelStack"), "KernelStack"},
-		{mem("Percpu"), "PerCPU"},
-		{mem("Bounce"), "Bounce"},
+		{hi(mem("KernelStack")), "KernelStack"},
+		{hi(mem("Percpu")), "PerCPU"},
+		{hi(mem("Bounce")), "Bounce"},
 	}},
 	"mem_vmalloc": {"bytes", []line{
-		{mem("VmallocChunk"), "Free chunk"},
+		{lo(mem("VmallocChunk")), "Free chunk"},
 		{mem("VmallocTotal"), "Total"},
-		{mem("VmallocUsed"), "Used"},
+		{hi(mem("VmallocUsed")), "Used"},
 	}},
 	"mem_anon": {"bytes", []line{
-		{mem("AnonHugePages"), "AnonHugePages"},
-		{mem("AnonPages"), "AnonPages"},
+		{hi(mem("AnonHugePages")), "AnonHugePages"},
+		{hi(mem("AnonPages")), "AnonPages"},
 	}},
 	"mem_unevictable": {"bytes", []line{
-		{mem("Unevictable"), "Unevictable"},
-		{mem("Mlocked"), "Mlocked"},
+		{hi(mem("Unevictable")), "Unevictable"},
+		{hi(mem("Mlocked")), "Mlocked"},
 	}},
 	"mem_directmap": {"bytes", []line{
-		{mem("DirectMap1G"), "1G pages"},
-		{mem("DirectMap2M"), "2M pages"},
-		{mem("DirectMap4k"), "4K pages"},
+		{hi(mem("DirectMap1G")), "1G pages"},
+		{hi(mem("DirectMap2M")), "2M pages"},
+		{hi(mem("DirectMap4k")), "4K pages"},
 	}},
 	"mem_hugepages": {"bytes", []line{
-		{`(node_memory_HugePages_Total{{sel}} - node_memory_HugePages_Free{{sel}}) * ` + mem("Hugepagesize"), "Used"},
-		{`node_memory_HugePages_Rsvd{{sel}} * ` + mem("Hugepagesize"), "Reserved"},
-		{`node_memory_HugePages_Surp{{sel}} * ` + mem("Hugepagesize"), "Surplus"},
+		{hi(`(node_memory_HugePages_Total{{sel}} - node_memory_HugePages_Free{{sel}}) * ` + mem("Hugepagesize")), "Used"},
+		{hi(`node_memory_HugePages_Rsvd{{sel}} * ` + mem("Hugepagesize")), "Reserved"},
+		{hi(`node_memory_HugePages_Surp{{sel}} * ` + mem("Hugepagesize")), "Surplus"},
 		{`node_memory_HugePages_Total{{sel}} * ` + mem("Hugepagesize"), "Total"},
 	}},
 
@@ -237,7 +246,7 @@ var hostPanels = map[string]panel{
 		{diskRate("discarded_sectors_total"), "{{device}}"},
 	}},
 	"disk_io_now": {"count", []line{
-		{`node_disk_io_now{` + panelDisks + `{sel}}`, "{{device}}"},
+		{hi(`node_disk_io_now{` + panelDisks + `{sel}}`), "{{device}}"},
 	}},
 }
 
@@ -282,7 +291,7 @@ func (s *Server) hostQuick(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res, err := p.prom.query(ctx, expand(q, sel, time.Minute))
+			res, err := p.prom.query(ctx, expand(q, sel, time.Minute, 0))
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -340,7 +349,7 @@ func drawPanel(r *http.Request, pn panel, pools []*pool, sels []string, byVolume
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				res[i][j], lineErrs[j] = p.prom.queryRange(r.Context(), expand(l.expr, sels[i], win), start, end, step)
+				res[i][j], lineErrs[j] = p.prom.queryRange(r.Context(), expand(l.expr, sels[i], win, step), start, end, step)
 			}()
 		}
 		wg.Wait()

@@ -13,13 +13,13 @@ import (
 // scrapedHost reads either.
 
 // expand fills in a query's pool matchers, `{{sel}}` alone in the braces or
-// `{sel}` after others, and its rate window, {win}.
-func expand(expr, sel string, win time.Duration) string {
+// `{sel}` after others, its rate window, {win}, and the chart's step, {step}.
+func expand(expr, sel string, win, step time.Duration) string {
 	after := sel
 	if sel != "" {
 		after = "," + sel
 	}
-	return strings.NewReplacer("{{sel}}", "{"+sel+"}", "{sel}", after, "{win}", win.String()).Replace(expr)
+	return strings.NewReplacer("{{sel}}", "{"+sel+"}", "{sel}", after, "{win}", win.String(), "{step}", step.String()).Replace(expr)
 }
 
 // Host is a node that node_exporter reports, with its name and kernel.

@@ -143,97 +143,110 @@ func (p *pool) volumes(ctx context.Context) ([]Volume, error) {
 	return out, nil
 }
 
+// peak is a per-scrape metric's highest sample in each chart step.
+func peak(metric string) string {
+	return `max_over_time(` + metric + `{{sel}}[{step}])`
+}
+
 // volumePanels are the dashboard's Cache, SPDK and S3 rows, one line per
 // volume (and per node it was served from). Sizes the dashboard shows in MiB
 // are bytes here, for the page to scale. The SPDK counters are per-scrape
 // deltas, so dividing by the 15s scrape interval gives a rate; summing by
 // name keeps a volume that moved to another node one line.
+//
+// Those counters, the cache and S3 ones, and sizes such as the allocated
+// write cache can spike for one scrape. A chart point is the latest sample at
+// its time, so over 6h (a 72s step) it would skip most scrapes: peak takes
+// each point's highest sample in its step instead. At 1h the step is the
+// scrape interval, and peak is the sample itself. Hit ratios, minimums and
+// configured limits stay as sampled: their peak would hide a dip, or there is
+// none.
 var volumePanels = map[string]panel{
 	// Cache
 	"cgroup_memory": {"bytes", []line{
-		{`cgroup_fs_cache_bytes{{sel}}`, "{{name}} fs_cache"},
-		{`cgroup_anon_bytes{{sel}}`, "{{name}} anon"},
+		{peak("cgroup_fs_cache_bytes"), "{{name}} fs_cache"},
+		{peak("cgroup_anon_bytes"), "{{name}} anon"},
 		{`cgroup_mem_max_bytes{{sel}}`, "{{name}} max"},
 		{`cgroup_mem_low_bytes{{sel}}`, "{{name}} low"},
 		{`cgroup_mem_high_bytes{{sel}}`, "{{name}} high"},
 	}},
 	"cgroup_memory_dirty": {"bytes", []line{
-		{`cgroup_dirty_bytes{{sel}}`, "{{name}} dirty"},
-		{`cgroup_writeback_bytes{{sel}}`, "{{name}} writeback"},
+		{peak("cgroup_dirty_bytes"), "{{name}} dirty"},
+		{peak("cgroup_writeback_bytes"), "{{name}} writeback"},
 	}},
 	"cache_write_allocated": {"bytes", []line{
-		{`cache_write_allocated_bytes{{sel}}`, "{{name}}"},
+		{peak("cache_write_allocated_bytes"), "{{name}}"},
 		{`cache_rw_cache_size{{sel}} * 1048576`, "{{name}} max"},
 	}},
 	"cache_read_allocated": {"bytes", []line{
-		{`cache_read_allocated_bytes{{sel}}`, "{{name}}"},
+		{peak("cache_read_allocated_bytes"), "{{name}}"},
 		{`cache_r_cache_size{{sel}} * 1048576`, "{{name}} max"},
 	}},
-	"memory_rss":           {"bytes", []line{{`memory_rss_bytes{{sel}}`, "{{name}}"}}},
-	"threads_running":      {"count", []line{{`threads_running{{sel}}`, "{{name}}"}}},
-	"threads_iowait":       {"count", []line{{`threads_iowait{{sel}}`, "{{name}}"}}},
-	"block_read_hits":      {"count", []line{{`block_cache_read_hits{{sel}}`, "{{name}}"}}},
-	"block_read_misses":    {"count", []line{{`block_cache_read_misses{{sel}}`, "{{name}}"}}},
+	"memory_rss":           {"bytes", []line{{peak("memory_rss_bytes"), "{{name}}"}}},
+	"threads_running":      {"count", []line{{peak("threads_running"), "{{name}}"}}},
+	"threads_iowait":       {"count", []line{{peak("threads_iowait"), "{{name}}"}}},
+	"block_read_hits":      {"count", []line{{peak("block_cache_read_hits"), "{{name}}"}}},
+	"block_read_misses":    {"count", []line{{peak("block_cache_read_misses"), "{{name}}"}}},
 	"block_read_hit_ratio": {"count", []line{{`block_cache_read_hit_ratio{{sel}}`, "{{name}}"}}},
-	"block_write_hits":     {"count", []line{{`block_cache_write_hits{{sel}}`, "{{name}}"}}},
-	"block_write_misses":   {"count", []line{{`block_cache_write_misses{{sel}}`, "{{name}}"}}},
+	"block_write_hits":     {"count", []line{{peak("block_cache_write_hits"), "{{name}}"}}},
+	"block_write_misses":   {"count", []line{{peak("block_cache_write_misses"), "{{name}}"}}},
 	"block_write_hit_ratio": {"count", []line{
 		{`block_cache_write_hit_ratio{{sel}}`, "{{name}}"},
 	}},
 	"cache_evictions": {"count", []line{
-		{`cache_evict_write_side{{sel}}`, "{{name}} write_side"},
-		{`cache_evict_lru{{sel}}`, "{{name}} lru"},
-		{`cache_evict_fallback{{sel}}`, "{{name}} fallback"},
+		{peak("cache_evict_write_side"), "{{name}} write_side"},
+		{peak("cache_evict_lru"), "{{name}} lru"},
+		{peak("cache_evict_fallback"), "{{name}} fallback"},
 	}},
 	"cache_reclaim_scan": {"count", []line{
-		{`cache_reclaim_scan_blocks{{sel}}`, "{{name}} blocks"},
-		{`cache_reclaim_scan_misses{{sel}}`, "{{name}} misses"},
-		{`cache_reclaim_scan_giveups{{sel}}`, "{{name}} giveups"},
+		{peak("cache_reclaim_scan_blocks"), "{{name}} blocks"},
+		{peak("cache_reclaim_scan_misses"), "{{name}} misses"},
+		{peak("cache_reclaim_scan_giveups"), "{{name}} giveups"},
 	}},
-	"cache_reclaim_stalls": {"count", []line{{`cache_reclaim_stalls{{sel}}`, "{{name}}"}}},
+	"cache_reclaim_stalls": {"count", []line{{peak("cache_reclaim_stalls"), "{{name}}"}}},
 	"cache_readahead": {"count", []line{
-		{`cache_readahead_arms{{sel}}`, "{{name}} arms"},
-		{`cache_readahead_batches{{sel}}`, "{{name}} batches"},
+		{peak("cache_readahead_arms"), "{{name}} arms"},
+		{peak("cache_readahead_batches"), "{{name}} batches"},
 	}},
 	"cache_readahead_blocks": {"count", []line{
-		{`cache_readahead_blocks{{sel}}`, "{{name}} fetched"},
-		{`cache_readahead_present{{sel}}`, "{{name}} present"},
-		{`cache_readahead_raced{{sel}}`, "{{name}} raced"},
+		{peak("cache_readahead_blocks"), "{{name}} fetched"},
+		{peak("cache_readahead_present"), "{{name}} present"},
+		{peak("cache_readahead_raced"), "{{name}} raced"},
 	}},
 	"cache_cached": {"bytes", []line{
-		{`cache_read_cached_bytes{{sel}}`, "{{name}} read_cached"},
-		{`cache_present_bytes{{sel}}`, "{{name}} present"},
-		{`cache_clean_write_side_bytes{{sel}}`, "{{name}} clean_write_side"},
+		{peak("cache_read_cached_bytes"), "{{name}} read_cached"},
+		{peak("cache_present_bytes"), "{{name}} present"},
+		{peak("cache_clean_write_side_bytes"), "{{name}} clean_write_side"},
 	}},
-	"cache_read_hits":   {"count", []line{{`cache_read_hits{{sel}}`, "{{name}}"}}},
-	"cache_read_misses": {"count", []line{{`cache_read_misses{{sel}}`, "{{name}}"}}},
+	"cache_read_hits":   {"count", []line{{peak("cache_read_hits"), "{{name}}"}}},
+	"cache_read_misses": {"count", []line{{peak("cache_read_misses"), "{{name}}"}}},
 
 	// SPDK
-	"spdk_read":       {"bytes_rate", []line{{`sum by(name) (spdk_volume_bytes_read{{sel}}) / 15`, "{{name}}"}}},
-	"spdk_write":      {"bytes_rate", []line{{`sum by(name) (spdk_volume_bytes_written{{sel}}) / 15`, "{{name}}"}}},
-	"spdk_read_iops":  {"ops", []line{{`sum by(name) (spdk_volume_num_read_ops{{sel}}) / 15`, "{{name}}"}}},
-	"spdk_write_iops": {"ops", []line{{`sum by(name) (spdk_volume_num_write_ops{{sel}}) / 15`, "{{name}}"}}},
+	"spdk_read":       {"bytes_rate", []line{{`sum by(name) (` + peak("spdk_volume_bytes_read") + `) / 15`, "{{name}}"}}},
+	"spdk_write":      {"bytes_rate", []line{{`sum by(name) (` + peak("spdk_volume_bytes_written") + `) / 15`, "{{name}}"}}},
+	"spdk_read_iops":  {"ops", []line{{`sum by(name) (` + peak("spdk_volume_num_read_ops") + `) / 15`, "{{name}}"}}},
+	"spdk_write_iops": {"ops", []line{{`sum by(name) (` + peak("spdk_volume_num_write_ops") + `) / 15`, "{{name}}"}}},
 	"spdk_read_latency": {"count", []line{
 		{`spdk_volume_min_read_latency_ticks{{sel}}`, "{{name}} min"},
-		{`spdk_volume_max_read_latency_ticks{{sel}}`, "{{name}} max"},
+		{peak("spdk_volume_max_read_latency_ticks"), "{{name}} max"},
 	}},
 	"spdk_write_latency": {"count", []line{
 		{`spdk_volume_min_write_latency_ticks{{sel}}`, "{{name}} min"},
-		{`spdk_volume_max_write_latency_ticks{{sel}}`, "{{name}} max"},
+		{peak("spdk_volume_max_write_latency_ticks"), "{{name}} max"},
 	}},
 
 	// S3
-	"http_gets":            {"count", []line{{`http_gets{{sel}}`, "{{name}}"}}},
-	"http_avg_get_time":    {"count", []line{{`http_avg_get_time{{sel}}`, "{{name}}"}}},
-	"http_puts":            {"count", []line{{`http_puts{{sel}}`, "{{name}}"}}},
-	"http_avg_put_time":    {"count", []line{{`http_avg_put_time{{sel}}`, "{{name}}"}}},
-	"http_deletes":         {"count", []line{{`http_deletes{{sel}}`, "{{name}}"}}},
-	"http_avg_delete_time": {"count", []line{{`http_avg_delete_time{{sel}}`, "{{name}}"}}},
+	"http_gets":            {"count", []line{{peak("http_gets"), "{{name}}"}}},
+	"http_avg_get_time":    {"count", []line{{peak("http_avg_get_time"), "{{name}}"}}},
+	"http_puts":            {"count", []line{{peak("http_puts"), "{{name}}"}}},
+	"http_avg_put_time":    {"count", []line{{peak("http_avg_put_time"), "{{name}}"}}},
+	"http_deletes":         {"count", []line{{peak("http_deletes"), "{{name}}"}}},
+	"http_avg_delete_time": {"count", []line{{peak("http_avg_delete_time"), "{{name}}"}}},
 	"http_errors": {"count", []line{
-		{`http_5xx_error{{sel}}`, "{{name}} 5xx"},
-		{`http_4xx_error{{sel}}`, "{{name}} 4xx"},
-		{`http_3xx_error{{sel}}`, "{{name}} 3xx"},
-		{`http_other_error{{sel}}`, "{{name}} other"},
+		{peak("http_5xx_error"), "{{name}} 5xx"},
+		{peak("http_4xx_error"), "{{name}} 4xx"},
+		{peak("http_3xx_error"), "{{name}} 3xx"},
+		{peak("http_other_error"), "{{name}} other"},
 	}},
 }
 

@@ -19,15 +19,24 @@
   </nav>
   <details class="pool-pick" id="pool-pick" hidden>
     <summary><span class="k">Pools</span> <span id="pool-label">All</span></summary>
-    <div class="menu" id="pool-menu" role="group" aria-label="Pools"></div>
+    <div class="menu">
+      <input class="pick-search" type="search" placeholder="Search pools" aria-label="Search pools" autocomplete="off">
+      <div class="menu-list" id="pool-menu" role="group" aria-label="Pools"></div>
+    </div>
   </details>
-  <label class="node-pick" id="node-pick" hidden>
-    <span class="k">Node</span>
-    <select id="host-pick"></select>
-  </label>
+  <details class="pool-pick" id="node-pick" hidden>
+    <summary><span class="k">Node</span> <span id="node-label"></span></summary>
+    <div class="menu">
+      <input class="pick-search" type="search" placeholder="Search nodes" aria-label="Search nodes" autocomplete="off">
+      <div class="menu-list" id="host-pick" role="radiogroup" aria-label="Node"></div>
+    </div>
+  </details>
   <details class="pool-pick" id="pick" hidden>
     <summary><span class="k" id="pick-title">Hosts</span> <span id="pick-label">All</span></summary>
-    <div class="menu" id="pick-menu" role="group"></div>
+    <div class="menu">
+      <input class="pick-search" type="search" placeholder="Search" aria-label="Search" id="pick-search" autocomplete="off">
+      <div class="menu-list" id="pick-menu" role="group"></div>
+    </div>
   </details>
   <div class="right">
     <span class="updated" id="updated"></span>
@@ -279,7 +288,9 @@
           <table class="nodes">
             <thead><tr>
               <th class="col-pool">Pool</th><th>Snapshot</th><th>Status</th><th>Kind</th><th>Incremental</th>
-              <th>Volume</th><th>Node</th><th>Storage pool</th>
+              <th>Volume</th><th class="num">Logical size</th><th class="num">Sent</th><th class="num">Server-side</th>
+              <th class="num">Errors</th><th class="num">Elapsed</th><th class="num">Transfer time</th>
+              <th class="num">Transfers</th><th class="num">Speed</th><th>Node</th>
             </tr></thead>
             <tbody id="snapshots"></tbody>
           </table>

@@ -60,6 +60,7 @@ function showLogin(message) {
   $("pick").hidden = true;
   $("pick").open = false;
   $("node-pick").hidden = true;
+  $("node-pick").open = false;
   $("login-view").hidden = false;
   $("login-error").textContent = message || "";
   $("login-form").password.focus();
@@ -106,7 +107,7 @@ function showMain() {
 function hashParams() {
   const [view, ...rest] = location.hash.replace(/^#/, "").split("&");
   const q = new URLSearchParams(rest.join("&"));
-  return { view, pool: q.get("pool") || "all", vols: q.get("vols") || "", host: q.get("host") || "" };
+  return { view, pool: q.get("pool") || "all", vols: q.get("vols") || "", host: q.get("host") || "", from: q.get("from") || "", to: q.get("to") || "" };
 }
 
 const VIEWS = ["overview", "hosts", "cache", "volumes", "snapshots"];
@@ -137,6 +138,7 @@ function setHash(view, patch = {}) {
   if (h.pool && h.pool !== "all") parts.push(`pool=${list(h.pool)}`);
   if (h.vols) parts.push(`vols=${list(h.vols)}`);
   if (h.host) parts.push(`host=${encodeURIComponent(h.host)}`);
+  if (h.from && h.to) parts.push(`from=${h.from}`, `to=${h.to}`);
   location.hash = parts.join("&");
 }
 
@@ -153,15 +155,29 @@ function hostLabel(n, short) {
   return `${n.hostname || n.ip} (${multiPool() ? n.pool + ", " : ""}${n.ip})`;
 }
 
-// The header picker narrows the Volumes view to some volumes, as Grafana's
-// $volume variable does, and keeps the choice in the hash.
+// The header picker narrows the Volumes and Snapshots views to some volumes,
+// as Grafana's $volume variable does, and keeps the choice in the hash; both
+// views share it.
+const volumeLabel = (v, short) => (short || !multiPool() ? v.name : `${v.name} (${v.pool})`);
 const PICKS = {
   volumes: {
     param: "vols", title: "Volumes", all: "All volumes",
-    items: () => state.storage?.volumes || [], key: volumeKey,
-    label: (v, short) => (short || !multiPool() ? v.name : `${v.name} (${v.pool})`),
+    items: () => state.storage?.volumes || [], key: volumeKey, label: volumeLabel,
+  },
+  snapshots: {
+    param: "vols", title: "Volume", all: "All volumes",
+    items: snapshotVolumes, key: volumeKey, label: volumeLabel,
   },
 };
+
+// snapshotVolumes are the volumes the listed snapshots were taken of.
+function snapshotVolumes() {
+  const seen = new Map();
+  for (const s of state.snapshots?.snapshots || []) {
+    if (s.volume) seen.set(`${s.pool}/${s.volume}`, { pool: s.pool, name: s.volume });
+  }
+  return [...seen.values()].sort((a, b) => a.pool.localeCompare(b.pool) || a.name.localeCompare(b.name));
+}
 
 // The items picked for a view, in table order; every item when none is
 // picked (or none picked is still listed).
@@ -194,8 +210,24 @@ document.querySelectorAll("#tabs a").forEach((a) =>
   }),
 );
 
+// Unticking "All" clears a menu's boxes, to tick just the items wanted. The
+// choice changes only when an item is ticked, so the menu stays cleared,
+// even across refreshes, until then or until it closes.
+const cleared = new Set();
+
+function clearMenu(id) {
+  cleared.add(id);
+  $(id).querySelectorAll("input[type=checkbox]").forEach((b) => (b.checked = false));
+}
+
+function keepCleared(id) {
+  if (cleared.has(id)) $(id).querySelectorAll("input[type=checkbox]").forEach((b) => (b.checked = false));
+}
+
 $("pool-menu").addEventListener("change", (e) => {
   const box = e.target;
+  if (box.value === "*" && !box.checked) return clearMenu("pool-menu");
+  cleared.delete("pool-menu");
   let pools;
   if (box.value === "*") {
     pools = []; // all
@@ -209,6 +241,8 @@ $("pool-menu").addEventListener("change", (e) => {
 });
 
 $("pick-menu").addEventListener("change", (e) => {
+  if (e.target.value === "*" && !e.target.checked) return clearMenu("pick-menu");
+  cleared.delete("pick-menu");
   const view = currentView();
   const c = PICKS[view];
   const keys = e.target.value === "*" ? [] : [...$("pick-menu").querySelectorAll("input[data-item]:checked")].map((b) => b.value);
@@ -219,7 +253,7 @@ $("pick-menu").addEventListener("change", (e) => {
 
 // Close a menu on a click outside it.
 document.addEventListener("click", (e) => {
-  for (const id of ["pool-pick", "pick"]) if (!$(id).contains(e.target)) $(id).open = false;
+  for (const id of ["pool-pick", "node-pick", "pick"]) if (!$(id).contains(e.target)) $(id).open = false;
 });
 
 function renderPools() {
@@ -227,9 +261,11 @@ function renderPools() {
   const picked = new Set(selectedPools());
   const all = allPicked();
   $("pool-menu").innerHTML =
-    `<label class="all"><input type="checkbox" value="*" ${all ? "checked disabled" : ""}> All pools</label>` +
+    `<label class="all"><input type="checkbox" value="*" ${all ? "checked" : ""}> All pools</label>` +
     state.pools.map((p) => `<label><input type="checkbox" data-pool value="${esc(p)}" ${picked.has(p) ? "checked" : ""}> ${esc(p)}</label>`).join("");
   $("pool-label").textContent = all ? "All" : [...picked].join(", ");
+  keepCleared("pool-menu");
+  searchMenu($("pool-pick"));
   document.body.classList.toggle("multi-pool", picked.size > 1);
 }
 
@@ -245,12 +281,63 @@ function renderPick() {
   $("pick-title").textContent = c.title;
   $("pick-menu").setAttribute("aria-label", c.title);
   $("pick-menu").innerHTML =
-    `<label class="all"><input type="checkbox" value="*" ${all ? "checked disabled" : ""}> ${c.all}</label>` +
+    `<label class="all"><input type="checkbox" value="*" ${all ? "checked" : ""}> ${c.all}</label>` +
     items.map((i) => `<label><input type="checkbox" data-item value="${esc(c.key(i))}" ${keys.has(c.key(i)) ? "checked" : ""}> ${esc(c.label(i))}</label>`).join("");
   $("pick-label").textContent = all ? "All" : chosen.length === 1 ? c.label(chosen[0], true) : `${chosen.length} of ${items.length}`;
+  $("pick-search").placeholder = `Search ${c.title.toLowerCase()}`;
+  keepCleared("pick-menu");
+  searchMenu($("pick"));
 }
 
+// searchMenu shows the menu's items that contain its search text, any case;
+// the "All" item stays. It runs on typing and after each re-render, which
+// keeps the text.
+function searchMenu(d) {
+  const q = d.querySelector(".pick-search").value.trim().toLowerCase();
+  const list = d.querySelector(".menu-list");
+  let shown = 0;
+  list.querySelectorAll("label:not(.all)").forEach((l) => {
+    l.hidden = q !== "" && !l.textContent.toLowerCase().includes(q);
+    if (!l.hidden) shown++;
+  });
+  list.querySelector(".none")?.remove();
+  if (q && !shown) list.insertAdjacentHTML("beforeend", `<div class="none">No match</div>`);
+}
+
+document.querySelectorAll(".pool-pick").forEach((d) => {
+  const search = d.querySelector(".pick-search");
+  search.addEventListener("input", () => searchMenu(d));
+  // Enter picks the only match, Escape clears the search or closes the menu.
+  search.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const shown = [...d.querySelectorAll(".menu-list label:not(.all):not([hidden]) input")];
+      if (shown.length === 1) shown[0].click();
+    } else if (e.key === "Escape") {
+      if (search.value) {
+        search.value = "";
+        searchMenu(d);
+      } else {
+        d.open = false;
+      }
+    }
+  });
+  // Opening a menu starts with an empty search, ready to type; closing a
+  // cleared one shows the choice it kept.
+  d.addEventListener("toggle", () => {
+    if (!d.open) {
+      const list = d.querySelector(".menu-list");
+      if (cleared.delete(list.id)) list.id === "pool-menu" ? renderPools() : renderPick();
+      return;
+    }
+    search.value = "";
+    searchMenu(d);
+    search.focus();
+  });
+});
+
 function applyView() {
+  renderRange();
   renderPools();
   renderPick();
   $("node-pick").hidden = currentView() !== "hosts" || $("main-view").hidden;
@@ -285,7 +372,8 @@ async function refresh() {
       const rows = [...document.querySelectorAll("#view-volumes details.row[open]")];
       await Promise.all(rows.map(renderPanelRow));
     } else if (view === "snapshots") {
-      renderSnapshots(await api(`/api/snapshots?${poolQuery()}`));
+      state.snapshots = await api(`/api/snapshots?${poolQuery()}`);
+      renderSnapshots(state.snapshots);
     } else if (view === "hosts") {
       state.overview = await api(`/api/overview?${poolQuery()}`);
       warnings(state.overview.warnings);
@@ -517,34 +605,57 @@ document.addEventListener("scroll", () => (hintPop.hidden = true), true);
 
 function renderSnapshots(sv) {
   warnings(sv.warnings);
-  const m = sv.summary;
-  const count = (label, v, sub) => kpi(label, v ?? 0, sub || "", v ? "bad" : "good");
+  renderPick();
+  // The tiles count the snapshots of the picked volumes.
+  let snaps = sv.snapshots;
+  if (!allItemsPicked("snapshots")) {
+    const want = new Set(picked("snapshots").map(volumeKey));
+    snaps = snaps.filter((s) => want.has(`${s.pool}/${s.volume}`));
+  }
+  const ready = snaps.filter((s) => s.ready).length;
+  const notReady = snaps.length - ready;
   $("snapshot-kpis").innerHTML = [
-    kpi("Snapshots", m.snapshots, m.snapshots ? "" : "none reported"),
-    kpi("Ready", m.ready, ""),
-    count("Not ready", m.not_ready, m.not_ready ? "see the table" : "none"),
-    kpi("Logical size", bytes(m.logical_bytes), "all snapshots"),
-    count("Transfer errors", m.transfer_errors),
-    count("Fatal errors", m.fatal_errors, "jobs"),
-    count("Retry errors", m.retry_errors, "jobs"),
-    kpi("Server-side copy", pct(m.server_side_share), "of the bytes sent"),
-    kpi("Server-side copied", bytes(m.server_side_bytes), ""),
-    kpi("Elapsed", m.avg_elapsed == null ? "–" : seconds(m.avg_elapsed), "average"),
-    kpi("Transfer time", m.avg_transfer_time == null ? "–" : seconds(m.avg_transfer_time), "average"),
-    kpi("Transfers", m.avg_total_transfers == null ? "–" : m.avg_total_transfers.toFixed(1), "average per snapshot"),
-    kpi("Speed", m.avg_speed == null ? "–" : bytes(m.avg_speed, "/s"), "average"),
+    kpi("Snapshots", snaps.length, snaps.length ? "" : "none reported"),
+    kpi("Ready", ready, ""),
+    kpi("Not ready", notReady, notReady ? "see the table" : "none", notReady ? "bad" : "good"),
+    kpi("Logical size", bytes(snaps.reduce((a, s) => a + (s.logical_bytes || 0), 0)), allItemsPicked("snapshots") ? "all snapshots" : "picked volumes"),
   ].join("");
 
-  $("snapshots").innerHTML = sv.snapshots.map((s) => `<tr>
+  const opt = (v, f) => (v == null ? "–" : f(v));
+  $("snapshots").innerHTML = snaps.map((s) => `<tr>
     <td class="col-pool">${esc(s.pool)}</td>
     <td class="name">${esc(s.name)}</td>
     <td>${check(s.ready, s.status || "READY", s.status || "unknown")}</td>
     <td>${esc(s.kind || "–")}</td>
     <td>${esc(s.incremental || "–")}</td>
     <td>${esc(s.volume || "–")}</td>
+    <td class="num">${opt(s.logical_bytes, bytes)}</td>
+    <td class="num">${opt(s.bytes, bytes)}</td>
+    <td class="num">${serverSideCell(s)}</td>
+    <td class="num">${errorsCell(s)}</td>
+    <td class="num">${opt(s.elapsed, seconds)}</td>
+    <td class="num">${opt(s.transfer_time, seconds)}</td>
+    <td class="num">${opt(s.transfers, (v) => v.toFixed(0))}</td>
+    <td class="num">${opt(s.speed, (v) => bytes(v, "/s"))}</td>
     <td>${s.node ? nodeCell(s) : status("–", "none")}</td>
-    <td>${esc(s.storage_pool || "–")}</td>
-  </tr>`).join("") || `<tr><td colspan="8" class="dim">No snapshots reported.</td></tr>`;
+  </tr>`).join("") || `<tr><td colspan="15" class="dim">No snapshots reported.</td></tr>`;
+}
+
+// serverSideCell is the share of the bytes sent that S3 copied server-side,
+// with the bytes in its hint.
+function serverSideCell(s) {
+  if (s.server_side_bytes == null) return "–";
+  const share = s.bytes ? (100 * s.server_side_bytes) / s.bytes : null;
+  return `<span class="hint" data-hint="${esc(`${bytes(s.server_side_bytes)} of ${bytes(s.bytes)} sent`)}">${share == null ? bytes(s.server_side_bytes) : pct(share)}</span>`;
+}
+
+// errorsCell is the snapshot's errors, by kind in its hint.
+function errorsCell(s) {
+  const kinds = [["Transfer", s.transfer_errors], ["Fatal", s.fatal_errors], ["Retry", s.retry_errors]];
+  if (kinds.every(([, v]) => v == null)) return "–";
+  const total = kinds.reduce((a, [, v]) => a + (v || 0), 0);
+  const hint = kinds.map(([k, v]) => `${k}: ${v ?? "–"}`).join("\n");
+  return `<span class="hint" data-hint="${esc(hint)}">${total ? status(String(total), "bad") : "0"}</span>`;
 }
 
 // --- host detail --------------------------------------------------------
@@ -597,7 +708,10 @@ function selectedHost() {
   return n ? { pool: n.pool, ip: n.ip, node: n } : null;
 }
 
-$("host-pick").addEventListener("change", (e) => setHash("hosts", { host: e.target.value }));
+$("host-pick").addEventListener("change", (e) => {
+  $("node-pick").open = false;
+  setHash("hosts", { host: e.target.value });
+});
 
 // Rows load their charts when opened, so closed ones cost nothing.
 document.querySelectorAll("details.row").forEach((d) =>
@@ -614,8 +728,10 @@ async function renderHost() {
   const h = selectedHost();
   $("host-pick").innerHTML = hostNodes().map((n) => {
     const v = nodeKey(n);
-    return `<option value="${esc(v)}" ${h && v === `${h.pool}/${h.ip}` ? "selected" : ""}>${esc(hostLabel(n))}</option>`;
+    return `<label><input type="radio" name="host" value="${esc(v)}" ${h && v === `${h.pool}/${h.ip}` ? "checked" : ""}> ${esc(hostLabel(n))}</label>`;
   }).join("");
+  $("node-label").textContent = h ? hostLabel(h.node, true) : "none";
+  searchMenu($("node-pick"));
   $("host-name").textContent = h ? h.node.hostname || h.ip : "No host";
   $("host-sub").textContent = h ? [h.node.pool, h.ip, h.node.kernel && `kernel ${h.node.kernel}`].filter(Boolean).join(" · ") : "";
   if (!h) {
@@ -668,10 +784,10 @@ async function renderPanelRow(d) {
     const panel = el.dataset.panel || id.slice(3);
     try {
       if (id.startsWith("vp-")) {
-        const data = await api(`/api/volume/series?panel=${panel}&range=${state.range}&${poolQuery()}`);
+        const data = await api(`/api/volume/series?panel=${panel}&${timeQuery()}&${poolQuery()}`);
         drawChart(id, onlyPicked("volumes", data, (s) => `${s.pool}/${s.volume}`));
       } else if (h) {
-        drawChart(id, await api(`/api/host/series?${hostQuery(h)}&panel=${panel}&range=${state.range}`));
+        drawChart(id, await api(`/api/host/series?${hostQuery(h)}&panel=${panel}&${timeQuery()}`));
       }
     } catch (err) {
       if (err.auth) throw err;
@@ -706,19 +822,70 @@ function lineLook(s, i) {
   return { label: nodeName(s.pool, s.ip), stroke: nodeColor(s.pool, s.ip) };
 }
 
-// Every view's range picker sets the one range.
+// The charts' time: a window dragged on a chart (from/to in the hash, as
+// Grafana keeps it in the URL), or else the last state.range seconds.
+function zoomed() {
+  const h = hashParams();
+  return h.from && h.to ? { from: Number(h.from), to: Number(h.to) } : null;
+}
+
+function timeQuery() {
+  const z = zoomed();
+  return z ? `from=${z.from}&to=${z.to}` : `range=${state.range}`;
+}
+
+// Every view's range picker sets the one range, and leaves a zoom.
 document.querySelectorAll(".filters [data-range]").forEach((b) =>
   b.addEventListener("click", () => {
-    document.querySelectorAll(".filters [data-range]").forEach((x) => x.setAttribute("aria-checked", String(x.dataset.range === b.dataset.range)));
     state.range = Number(b.dataset.range);
+    if (zoomed()) return setHash(currentView(), { from: "", to: "" });
+    renderRange();
     refresh();
   }),
 );
 
+// Each range picker gets the zoomed window and a way back.
+document.querySelectorAll(".filters").forEach((f) => {
+  if (!f.querySelector("[data-range]")) return;
+  f.insertAdjacentHTML("beforeend", `<span class="zoom-info" hidden></span><button class="ghost zoom-out" hidden>Zoom out</button>`);
+  f.querySelector(".zoom-out").addEventListener("click", zoomOut);
+});
+
+function zoomOut() {
+  if (zoomed()) setHash(currentView(), { from: "", to: "" });
+}
+
+// renderRange marks the picked range, or none and the window when zoomed.
+function renderRange() {
+  const z = zoomed();
+  document.querySelectorAll(".filters [data-range]").forEach((x) => x.setAttribute("aria-checked", String(!z && Number(x.dataset.range) === state.range)));
+  const fmt = (t) => new Date(t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  document.querySelectorAll(".filters .zoom-info").forEach((el) => {
+    el.hidden = !z;
+    el.textContent = z ? `${fmt(z.from)} – ${fmt(z.to)}` : "";
+  });
+  document.querySelectorAll(".filters .zoom-out").forEach((el) => (el.hidden = !z));
+}
+
+// zoomTo is a drag across a chart: the page shows that window, at least a
+// minute, refetched at its own finer step.
+function zoomTo(u) {
+  const { left, width } = u.select;
+  u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
+  if (width < 5) return;
+  let from = Math.floor(u.posToVal(left, "x"));
+  let to = Math.ceil(u.posToVal(left + width, "x"));
+  if (to - from < 60) {
+    const mid = Math.round((from + to) / 2);
+    [from, to] = [mid - 30, mid + 30];
+  }
+  setHash(currentView(), { from: String(from), to: String(to) });
+}
+
 async function renderCharts(metrics) {
   await Promise.all(metrics.map(async (m) => {
     try {
-      const data = await api(`/api/series?metric=${m}&range=${state.range}&${poolQuery()}`);
+      const data = await api(`/api/series?metric=${m}&${timeQuery()}&${poolQuery()}`);
       drawChart(m, data);
     } catch (err) {
       if (err.auth) throw err;
@@ -741,7 +908,7 @@ function drawChart(metric, data) {
   }
 
   // Recreated when the nodes change, so colors and labels follow them.
-  const key = data.series.map((s) => s.pool + "/" + (s.label || s.volume || s.ip)).join(",") + "|" + state.range;
+  const key = data.series.map((s) => s.pool + "/" + (s.label || s.volume || s.ip)).join(",") + "|" + timeQuery();
   const aligned = [data.t, ...data.series.map((s) => s.v)];
   const existing = state.charts[metric];
   // Same nodes and range: update in place, so the chart does not flash.
@@ -763,8 +930,15 @@ function drawChart(metric, data) {
     width: el.clientWidth || 600,
     height: 220,
     padding: [8, 8, 0, 0],
-    cursor: { points: { size: 8 }, drag: { x: false, y: false } },
+    // Dragging across the plot zooms the page to that window, as in Grafana;
+    // a double click zooms back out.
+    cursor: { points: { size: 8 }, drag: { x: true, y: false, setScale: false } },
+    select: { show: true },
     legend: { live: true },
+    hooks: {
+      setSelect: [zoomTo],
+      ready: [(u) => u.over.addEventListener("dblclick", zoomOut)],
+    },
     plugins: [tooltip(looks, spec)],
     scales: { y: { range: (u, lo, hi) => [0, spec.max ?? Math.max((hi || 0) * 1.1, 1)] } },
     axes: [
