@@ -254,7 +254,12 @@ func TestSeries(t *testing.T) {
 	if code, _ := c.do("GET", "/api/series?metric=up", ""); code != 400 {
 		t.Errorf("unknown metric: %d, want 400", code)
 	}
-	code, out := c.do("GET", "/api/series?metric=cpu&range=900&pool=pool1", "")
+	// Nothing picked: no lines, and nothing asked of Prometheus.
+	before := len(prom.queries)
+	if _, out := c.do("GET", "/api/series?metric=cpu&pool=all", ""); len(out["series"].([]any)) != 0 || len(prom.queries) != before {
+		t.Errorf("no nodes picked: %v, %d queries", out, len(prom.queries)-before)
+	}
+	code, out := c.do("GET", "/api/series?metric=cpu&range=900&pool=pool1&nodes=pool1/10.0.1.10,pool1/10.0.1.11", "")
 	if code != 200 {
 		t.Fatalf("series: %d %v", code, out)
 	}
@@ -266,13 +271,18 @@ func TestSeries(t *testing.T) {
 	if len(lines) != 2 || first["ip"] != "10.0.1.10" || first["pool"] != "pool1" || first["v"].([]any)[0] != 5.0 || first["v"].([]any)[1] != nil {
 		t.Errorf("aligned series: %v", lines)
 	}
-	_, out = c.do("GET", "/api/series?metric=cpu&pool=pool2", "")
+	if q := prom.queries[len(prom.queries)-1]; !strings.Contains(q, `{pool="pool1",ip=~"10\\.0\\.1\\.10|10\\.0\\.1\\.11"}`) {
+		t.Errorf("picked nodes' query: %s", q)
+	}
+	_, out = c.do("GET", "/api/series?metric=cpu&pool=pool2&nodes=pool2/10.1.1.10", "")
 	if l := out["series"].([]any); len(l) != 1 || l[0].(map[string]any)["ip"] != "10.1.1.10" {
 		t.Errorf("core cpu (by its ip label): %v", l)
 	}
-	_, out = c.do("GET", "/api/series?metric=ram&pool=all", "")
-	if n := len(out["series"].([]any)); n != 3 {
-		t.Errorf("all pools: %d lines, want 3", n)
+	// A pool none of whose nodes is picked is not queried.
+	before = len(prom.queries)
+	_, out = c.do("GET", "/api/series?metric=ram&pool=all&nodes=pool1/10.0.1.10,pool2/10.1.1.10", "")
+	if n := len(out["series"].([]any)); n != 3 || len(prom.queries)-before != 2 {
+		t.Errorf("all pools: %d lines, %d queries, want 3 and 2", n, len(prom.queries)-before)
 	}
 	for _, q := range prom.queries {
 		if !poolMatcher.MatchString(q) {
@@ -352,17 +362,24 @@ func TestVolumes(t *testing.T) {
 		t.Errorf("all pools: %v (pool3 has no metrics)", out)
 	}
 
+	// Nothing picked: no lines, and nothing asked of Prometheus.
+	before := len(prom.queries)
 	_, out = c.do("GET", "/api/volume/series?panel=spdk_read&pool=pool2", "")
+	if lines := out["series"].([]any); len(lines) != 0 || len(prom.queries) != before {
+		t.Errorf("no volumes picked: %v, %d queries", out, len(prom.queries)-before)
+	}
+
+	_, out = c.do("GET", "/api/volume/series?panel=spdk_read&pool=pool2&vols=pool2/vol-node-c", "")
 	lines := out["series"].([]any)
 	if l := lines[0].(map[string]any); len(lines) != 1 || l["volume"] != "vol-node-c" || l["label"] != "vol-node-c" || out["unit"] != "bytes_rate" {
 		t.Errorf("volume series: %v", out)
 	}
 	last := prom.queries[len(prom.queries)-1]
-	if !strings.Contains(last, `sum by(name) (max_over_time(spdk_volume_bytes_read{pool="pool2"}[`) {
+	if !strings.Contains(last, `sum by(name) (max_over_time(spdk_volume_bytes_read{pool="pool2",name=~"vol-node-c"}[`) {
 		t.Errorf("volume query: %s", last)
 	}
 	// A volume's lines sit together, ordered by label.
-	_, out = c.do("GET", "/api/volume/series?panel=cgroup_memory_dirty&pool=all", "")
+	_, out = c.do("GET", "/api/volume/series?panel=cgroup_memory_dirty&pool=all&vols=pool1/vol-node-a,pool1/vol-node-b,pool2/vol-node-c,pool3/vol-x", "")
 	var labels []string
 	for _, l := range out["series"].([]any) {
 		labels = append(labels, l.(map[string]any)["label"].(string))

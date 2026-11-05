@@ -63,11 +63,17 @@
       <div class="kpis" id="cache-kpis"></div>
 
       <div class="card">
-        <div class="card-head"><h2>Cache nodes</h2><span class="sub">IPs are the data-subnet addresses</span></div>
+        <div class="card-head">
+          <h2>Cache nodes</h2><span class="sub">IPs are the data-subnet addresses; tick nodes to see their RAID and mounts below</span>
+          <input class="table-search" id="cache-search" type="search" placeholder="Search nodes, IPs, UUIDs" aria-label="Search cache nodes" autocomplete="off">
+          <label class="only-bad"><input type="checkbox" id="cache-bad"> Only down</label>
+          <span class="sub" id="cache-count"></span>
+          <button class="ghost small" id="cache-clear" hidden>Clear picks</button>
+        </div>
         <div class="table-wrap">
           <table class="nodes">
             <thead><tr>
-              <th class="col-pool">Pool</th><th>Node</th><th>Status</th><th>Mounts</th><th>Error check</th>
+              <th></th><th class="col-pool">Pool</th><th>Node</th><th>Status</th><th>Mounts</th><th>Error check</th>
               <th class="num">Disks</th><th class="num">RW cache</th><th class="num">Read cache</th>
             </tr></thead>
             <tbody id="cache-nodes"></tbody>
@@ -104,11 +110,17 @@
       <div class="kpis" id="storage-kpis"></div>
 
       <div class="card">
-        <div class="card-head"><h2>Volumes</h2></div>
+        <div class="card-head">
+          <h2>Volumes</h2><span class="sub">tick volumes to see their metrics below</span>
+          <input class="table-search" id="vol-search" type="search" placeholder="Search volumes, nodes, buckets" aria-label="Search volumes" autocomplete="off">
+          <label class="only-bad"><input type="checkbox" id="vol-bad"> Only not ready</label>
+          <span class="sub" id="vol-count"></span>
+          <button class="ghost small" id="vol-clear" hidden>Clear picks</button>
+        </div>
         <div class="table-wrap">
           <table class="nodes">
             <thead><tr>
-              <th></th><th class="col-pool">Pool</th><th>Volume</th><th>Status</th>
+              <th></th><th></th><th class="col-pool">Pool</th><th>Volume</th><th>Status</th>
               <th class="num">Size</th><th class="num">RW cache</th><th class="num">Read cache</th><th>QoS</th><th>Extra params</th><th>Node</th><th>Bucket</th>
             </tr></thead>
             <tbody id="volumes"></tbody>
@@ -283,7 +295,12 @@
       <div class="kpis" id="snapshot-kpis"></div>
 
       <div class="card">
-        <div class="card-head"><h2>Snapshots</h2></div>
+        <div class="card-head">
+          <h2>Snapshots</h2>
+          <input class="table-search" id="snap-search" type="search" placeholder="Search snapshots, volumes, status" aria-label="Search snapshots" autocomplete="off">
+          <label class="only-bad"><input type="checkbox" id="snap-bad"> Only not ready</label>
+          <span class="sub" id="snap-count"></span>
+        </div>
         <div class="table-wrap">
           <table class="nodes">
             <thead><tr>
@@ -302,11 +319,17 @@
       <div class="kpis" id="ov-kpis"></div>
 
       <div class="card">
-        <div class="card-head"><h2>Node status</h2><span class="sub">the cluster's view of each node, and whether Prometheus reaches its services</span></div>
+        <div class="card-head">
+          <h2>Node status</h2><span class="sub">the cluster's view of each node; tick nodes to see their CPU and RAM below</span>
+          <input class="table-search" id="ov-search" type="search" placeholder="Search nodes, IPs, UUIDs" aria-label="Search nodes" autocomplete="off">
+          <label class="only-bad"><input type="checkbox" id="ov-bad"> Only down</label>
+          <span class="sub" id="ov-count"></span>
+          <button class="ghost small" id="ov-clear" hidden>Clear picks</button>
+        </div>
         <div class="table-wrap">
           <table class="nodes">
             <thead><tr>
-              <th></th><th class="col-pool">Pool</th><th>Host</th><th>Cluster</th><th>Core</th><th>Cache</th><th>Storage</th><th>UUID</th>
+              <th></th><th></th><th class="col-pool">Pool</th><th>Host</th><th>Cluster</th><th>Core</th><th>Cache</th><th>Storage</th><th>UUID</th>
             </tr></thead>
             <tbody id="ov-nodes"></tbody>
           </table>

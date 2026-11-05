@@ -13,6 +13,7 @@ How the tool is used (the agent-facing contract): @AGENTS.md
 
 ```
 cmd/bbctl/main.go       entry point; maps errors to exit codes
+cmd/ui-mock/            dev only: the dashboard on a made-up cluster (make mock-ui)
 internal/cli/           cobra commands (one file per area: init, config, secrets, deploy, nodes, pool)
 internal/config/        bbctl.yaml schema, Validate(), defaults, atomic Save/Stage
 internal/render/        config -> one Terraform root per state (main.tf.json), WriteLocal for previews
@@ -104,7 +105,13 @@ Each of these fixed a real bug or review finding. Keep them.
 
 `make build` builds `./bbctl`, `make install` also copies it to
 `~/.local/bin`, `make check` runs everything below, `make clean`
-removes `./bbctl` and `dist/`. `make help` lists the rest. By hand:
+removes `./bbctl` and `dist/`. `make help` lists the rest.
+
+`make mock-ui` serves the dashboard on a made-up cluster
+(`cmd/ui-mock`, `internal/dash/mock.go`): 50 pools of 20 nodes with 30
+volumes and 30 snapshots each by default, any password, no AWS. It is a
+separate program, not a bbctl command. When the page sends a new query
+shape, teach the mock to answer it; `TestMock` checks each view. By hand:
 
 ```bash
 go build ./... && go vet ./... && go test ./...

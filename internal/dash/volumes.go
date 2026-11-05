@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -262,10 +263,24 @@ func (s *Server) volumeSeries(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("unknown panel"))
 		return
 	}
-	sels := make([]string, len(pools))
-	for i, p := range pools {
-		sels[i] = p.selector()
+	// Only the volumes the page picked (?vols=pool/name,...) are queried: a
+	// line for every volume of every pool would be thousands of lines.
+	picked := map[string][]string{}
+	for _, v := range strings.Split(r.URL.Query().Get("vols"), ",") {
+		if pool, name, ok := strings.Cut(v, "/"); ok && name != "" {
+			picked[pool] = append(picked[pool], regexp.QuoteMeta(name))
+		}
 	}
+	var sels []string
+	var shown []*pool
+	for _, p := range pools {
+		if names := picked[p.name]; len(names) > 0 {
+			re := strings.ReplaceAll(strings.Join(names, "|"), `\`, `\\`)
+			sels = append(sels, matchers(p.selector(), `name=~"`+re+`"`))
+			shown = append(shown, p)
+		}
+	}
+	pools = shown
 	out, errs := drawPanel(r, pn, pools, sels, true)
 	for i, p := range pools {
 		if errs[i] != nil {

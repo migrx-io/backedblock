@@ -86,7 +86,7 @@ code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 }
 .pool-pick .menu-list { max-height: 320px; overflow-y: auto; }
 .pool-pick .menu-list label[hidden] { display: none; }
-.pool-pick .menu-list .none { color: var(--muted); padding: 6px 8px; }
+.pool-pick .menu-list .none, .pool-pick .menu-list .more { color: var(--muted); padding: 6px 8px; }
 .pool-pick input[type="radio"] { margin: 0; }
 /* The Pool column only shows when more than one pool is on the page. */
 body:not(.multi-pool) .col-pool { display: none; }
@@ -244,3 +244,16 @@ details.row:not([open]) > summary { margin-bottom: 0; }
   background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12); padding: 6px 10px; font-size: 12px; line-height: 18px; color: var(--ink);
 }
+
+/* The volume table picks the volumes the charts show. */
+.table-search {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--page); margin-left: auto;
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; width: 260px;
+}
+button.small { padding: 4px 10px; font-size: 13px; }
+tr.pickable { cursor: pointer; }
+tr.pickable:hover { background: var(--page); }
+tr.picked { background: var(--page); }
+tr.pickable input[type="checkbox"] { margin: 0; cursor: pointer; }
+.only-bad { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.only-bad input { margin: 0; }

@@ -15,11 +15,17 @@ function css(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-// Color follows the node: its position in the node table. Past eight nodes
-// the rest are drawn in muted ink and stay identified by the legend and the
-// table.
+// Color follows the node: its place among the nodes picked in the Overview
+// table, as only they have lines. Past eight nodes the rest are drawn in
+// muted ink and stay identified by the legend and the table.
 function nodeIndex(pool, ip) {
-  return (state.overview?.nodes || []).findIndex((n) => n.pool === pool && n.ip === ip);
+  return pickedNodes().indexOf(`${pool}/${ip}`);
+}
+
+// pickedNodes are the nodes ticked in the Overview table (nodes in the
+// hash), in the order they were ticked.
+function pickedNodes() {
+  return hashParams().nodes.split(",").filter(Boolean);
 }
 
 function nodeColor(pool, ip) {
@@ -27,13 +33,20 @@ function nodeColor(pool, ip) {
 }
 
 function nodeName(pool, ip) {
-  const n = state.overview?.nodes[nodeIndex(pool, ip)];
+  const n = state.overview?.nodes.find((n) => n.pool === pool && n.ip === ip);
   return n?.hostname || ip;
 }
 
-// A volume's color is its position in the volume table, as a node's is.
+// A volume's color is its place among the picked volumes: only they have
+// lines on the charts.
 function volumeIndex(pool, name) {
-  return (state.storage?.volumes || []).findIndex((v) => v.pool === pool && v.name === name);
+  return pickedVolumes().indexOf(`${pool}/${name}`);
+}
+
+// pickedVolumes are the volumes ticked in the Volumes table (vols in the
+// hash, which the Snapshots filter shares), in the order they were ticked.
+function pickedVolumes() {
+  return hashParams().vols.split(",").filter(Boolean);
 }
 
 function slotColor(i) {
@@ -107,7 +120,7 @@ function showMain() {
 function hashParams() {
   const [view, ...rest] = location.hash.replace(/^#/, "").split("&");
   const q = new URLSearchParams(rest.join("&"));
-  return { view, pool: q.get("pool") || "all", vols: q.get("vols") || "", host: q.get("host") || "", from: q.get("from") || "", to: q.get("to") || "" };
+  return { view, pool: q.get("pool") || "all", vols: q.get("vols") || "", nodes: q.get("nodes") || "", cnodes: q.get("cnodes") || "", host: q.get("host") || "", from: q.get("from") || "", to: q.get("to") || "" };
 }
 
 const VIEWS = ["overview", "hosts", "cache", "volumes", "snapshots"];
@@ -132,14 +145,21 @@ function allPicked() {
 // setHash goes to view, changing the hash parameters in patch and keeping
 // the rest.
 function setHash(view, patch = {}) {
+  location.hash = hashFor(view, patch);
+}
+
+// hashFor is the hash for view with patch over the current parameters.
+function hashFor(view, patch = {}) {
   const h = { ...hashParams(), ...patch };
   const list = (v) => v.split(",").map(encodeURIComponent).join(",");
   const parts = [view];
   if (h.pool && h.pool !== "all") parts.push(`pool=${list(h.pool)}`);
   if (h.vols) parts.push(`vols=${list(h.vols)}`);
+  if (h.nodes) parts.push(`nodes=${list(h.nodes)}`);
+  if (h.cnodes) parts.push(`cnodes=${list(h.cnodes)}`);
   if (h.host) parts.push(`host=${encodeURIComponent(h.host)}`);
   if (h.from && h.to) parts.push(`from=${h.from}`, `to=${h.to}`);
-  location.hash = parts.join("&");
+  return parts.join("&");
 }
 
 function poolQuery() {
@@ -160,10 +180,6 @@ function hostLabel(n, short) {
 // views share it.
 const volumeLabel = (v, short) => (short || !multiPool() ? v.name : `${v.name} (${v.pool})`);
 const PICKS = {
-  volumes: {
-    param: "vols", title: "Volumes", all: "All volumes",
-    items: () => state.storage?.volumes || [], key: volumeKey, label: volumeLabel,
-  },
   snapshots: {
     param: "vols", title: "Volume", all: "All volumes",
     items: snapshotVolumes, key: volumeKey, label: volumeLabel,
@@ -193,15 +209,6 @@ function allItemsPicked(view) {
   return picked(view).length === PICKS[view].items().length;
 }
 
-
-// Lines of a chart narrowed to the view's picked items, matched by keyOf.
-function onlyPicked(view, data, keyOf) {
-  if (!allItemsPicked(view)) {
-    const want = new Set(picked(view).map(PICKS[view].key));
-    data.series = (data.series || []).filter((s) => want.has(keyOf(s)));
-  }
-  return data;
-}
 
 document.querySelectorAll("#tabs a").forEach((a) =>
   a.addEventListener("click", (e) => {
@@ -269,6 +276,9 @@ function renderPools() {
   document.body.classList.toggle("multi-pool", picked.size > 1);
 }
 
+// PICK_ROWS caps a header menu's list, as TABLE_ROWS does the table's.
+const PICK_ROWS = 200;
+
 function renderPick() {
   const view = currentView();
   const c = PICKS[view];
@@ -280,9 +290,22 @@ function renderPick() {
   const all = allItemsPicked(view);
   $("pick-title").textContent = c.title;
   $("pick-menu").setAttribute("aria-label", c.title);
+  // A long list shows the picked items, then the first PICK_ROWS that match
+  // the search; under "All" none is ticked, and ticking one picks just it.
+  let list = items;
+  let more = 0;
+  const big = items.length > PICK_ROWS;
+  if (big) {
+    const q = $("pick-search").value.trim().toLowerCase();
+    const rest = items.filter((i) => !(keys.has(c.key(i)) && !all) && (!q || c.label(i).toLowerCase().includes(q)));
+    list = [...(all ? [] : chosen), ...rest.slice(0, PICK_ROWS)];
+    more = rest.length - Math.min(rest.length, PICK_ROWS);
+  }
+  const ticked = (i) => keys.has(c.key(i)) && !(big && all);
   $("pick-menu").innerHTML =
     `<label class="all"><input type="checkbox" value="*" ${all ? "checked" : ""}> ${c.all}</label>` +
-    items.map((i) => `<label><input type="checkbox" data-item value="${esc(c.key(i))}" ${keys.has(c.key(i)) ? "checked" : ""}> ${esc(c.label(i))}</label>`).join("");
+    list.map((i) => `<label><input type="checkbox" data-item value="${esc(c.key(i))}" ${ticked(i) ? "checked" : ""}> ${esc(c.label(i))}</label>`).join("") +
+    (more ? `<div class="more">${more} more, type to narrow</div>` : "");
   $("pick-label").textContent = all ? "All" : chosen.length === 1 ? c.label(chosen[0], true) : `${chosen.length} of ${items.length}`;
   $("pick-search").placeholder = `Search ${c.title.toLowerCase()}`;
   keepCleared("pick-menu");
@@ -306,7 +329,9 @@ function searchMenu(d) {
 
 document.querySelectorAll(".pool-pick").forEach((d) => {
   const search = d.querySelector(".pick-search");
-  search.addEventListener("input", () => searchMenu(d));
+  // A long list is rebuilt for the search; a short one is filtered.
+  const refilter = () => (d.id === "pick" ? renderPick() : searchMenu(d));
+  search.addEventListener("input", refilter);
   // Enter picks the only match, Escape clears the search or closes the menu.
   search.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -316,7 +341,7 @@ document.querySelectorAll(".pool-pick").forEach((d) => {
     } else if (e.key === "Escape") {
       if (search.value) {
         search.value = "";
-        searchMenu(d);
+        refilter();
       } else {
         d.open = false;
       }
@@ -331,7 +356,7 @@ document.querySelectorAll(".pool-pick").forEach((d) => {
       return;
     }
     search.value = "";
-    searchMenu(d);
+    refilter();
     search.focus();
   });
 });
@@ -365,7 +390,8 @@ async function refresh() {
   try {
     const view = currentView();
     if (view === "cache") {
-      renderCache(await api(`/api/cache?${poolQuery()}`));
+      state.cache = await api(`/api/cache?${poolQuery()}`);
+      renderCache(state.cache);
     } else if (view === "volumes") {
       state.storage = await api(`/api/volumes?${poolQuery()}`);
       renderStorage(state.storage);
@@ -418,8 +444,29 @@ function renderOverview(ov) {
   }
   $("ov-kpis").innerHTML = tiles.join("");
 
-  $("ov-nodes").innerHTML = nodes.map((n) => `<tr>
-    <td><span class="swatch" style="background:${nodeColor(n.pool, n.ip)}"></span></td>
+  renderNodeRows();
+}
+
+// renderNodeRows lists the picked nodes first, then the others that match
+// the search, up to TABLE_ROWS.
+function renderNodeRows() {
+  const nodes = state.overview?.nodes || [];
+  const picks = pickedNodes();
+  const pickedSet = new Set(picks);
+  const q = $("ov-search").value.trim().toLowerCase();
+  const bad = $("ov-bad").checked;
+  const matches = (n) => (!bad || nodeDown(n)) && (!q || [n.pool, n.hostname, n.ip, n.uuid, n.status].some((x) => x && x.toLowerCase().includes(q)));
+  const byKey = new Map(nodes.map((n) => [nodeKey(n), n]));
+  const top = picks.map((k) => byKey.get(k)).filter(Boolean);
+  const rest = nodes.filter((n) => !pickedSet.has(nodeKey(n)) && matches(n));
+  $("ov-count").textContent = rowCount(top.length, rest.length, q || bad);
+  $("ov-clear").hidden = picks.length === 0;
+  $("ov-nodes").innerHTML = [...top, ...rest.slice(0, TABLE_ROWS)].map((n) => {
+    const key = nodeKey(n);
+    const on = pickedSet.has(key);
+    return `<tr class="pickable${on ? " picked" : ""}" data-key="${esc(key)}">
+    <td><input type="checkbox" ${on ? "checked" : ""} aria-label="Show ${esc(n.hostname || n.ip)} on the charts"></td>
+    <td>${on ? `<span class="swatch" style="background:${nodeColor(n.pool, n.ip)}"></span>` : ""}</td>
     <td class="col-pool">${esc(n.pool)}</td>
     <td><div class="name">${esc(n.hostname || n.ip)}</div><div class="ip">${esc(n.ip)}</div></td>
     <td>${clusterStatus(n)}</td>
@@ -427,8 +474,51 @@ function renderOverview(ov) {
     <td>${service(n, "cache")}</td>
     <td>${service(n, "storage")}</td>
     <td class="mono">${esc(n.uuid || "–")}</td>
-  </tr>`).join("") || `<tr><td colspan="8" class="dim">No nodes report to Prometheus.</td></tr>`;
+  </tr>`;
+  }).join("") || `<tr><td colspan="9" class="dim">${nodes.length ? "No node matches." : "No nodes report to Prometheus."}</td></tr>`;
 }
+
+// nodeDown is a node to look at: not UP in its cluster, not reporting, or
+// with a service Prometheus does not reach.
+function nodeDown(n) {
+  return n.status !== "UP" || Object.values(n.services || {}).includes(false);
+}
+
+// rowCount is a picking table's count: its picked rows and how many of the
+// others it shows.
+function rowCount(picked, rest, q) {
+  const shown = rest > TABLE_ROWS ? `showing ${TABLE_ROWS} of ${rest}${q ? " matches" : ""}, search to narrow` : `${rest}${q ? " matching" : ""}`;
+  return `${picked ? `${picked} picked · ` : ""}${shown}`;
+}
+
+// pickRows sets a picking table's picks (param in the hash) without a
+// hashchange, so the table is not fetched again; then redraws.
+function pickRows(param, keys, redraw) {
+  history.replaceState(null, "", "#" + hashFor(currentView(), { [param]: keys.join(",") }));
+  redraw();
+}
+
+// onPick makes a table's rows toggle their key among the picks in param.
+function onPick(tbody, param, picks, redraw) {
+  $(tbody).addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-key]");
+    // Hints and links in a row keep their own clicks.
+    if (!tr || e.target.closest(".hint, a")) return;
+    const key = tr.dataset.key;
+    const now = picks();
+    pickRows(param, now.includes(key) ? now.filter((k) => k !== key) : [...now, key], redraw);
+  });
+}
+
+function redrawNodes() {
+  renderNodeRows();
+  renderCharts(["cpu", "ram"]).catch((err) => err.auth && showLogin());
+}
+
+onPick("ov-nodes", "nodes", pickedNodes, redrawNodes);
+$("ov-search").addEventListener("input", renderNodeRows);
+$("ov-bad").addEventListener("change", renderNodeRows);
+$("ov-clear").addEventListener("click", () => pickRows("nodes", [], redrawNodes));
 
 function status(text, kind) {
   return `<span class="st ${kind}">${esc(text)}</span>`;
@@ -455,10 +545,14 @@ function meter(v) {
 
 // Sizes come in MiB; show them in GiB or TiB (binary units, as the cache
 // plugin reports them).
+// size prints MiB as GiB, TiB or PiB.
 function size(mib) {
   if (mib == null) return "–";
   const gib = mib / 1024;
-  return gib >= 1024 ? `${(gib / 1024).toFixed(2)} TiB` : `${gib.toFixed(gib >= 100 ? 0 : 1)} GiB`;
+  if (gib < 1024) return `${gib.toFixed(gib >= 100 ? 0 : 1)} GiB`;
+  const tib = gib / 1024;
+  if (tib < 1024) return `${tib.toFixed(tib >= 100 ? 1 : 2)} TiB`;
+  return `${(tib / 1024).toFixed(2)} PiB`;
 }
 
 function check(ok, good = "ok", bad = "failed") {
@@ -484,9 +578,41 @@ function renderCache(c) {
     kpi("Disks", s.disks, "cache disks, all nodes"),
   ].join("");
 
-  const empty = (cols, what) => `<tr><td colspan="${cols}" class="dim">No ${what} reported.</td></tr>`;
+  renderCacheRows();
+}
 
-  $("cache-nodes").innerHTML = c.nodes.map((n) => `<tr>
+// cacheKey names a cache node, and its RAID and mounts, by pool and UUID.
+const cacheKey = (x) => `${x.pool}/${x.node}`;
+
+// pickedCacheNodes are the nodes ticked in the Cache nodes table (cnodes in
+// the hash), in the order they were ticked.
+function pickedCacheNodes() {
+  return hashParams().cnodes.split(",").filter(Boolean);
+}
+
+// renderCacheRows lists the picked cache nodes first, then the others that
+// match the search, up to TABLE_ROWS; the RAID and mount tables show only
+// the picked nodes'.
+function renderCacheRows() {
+  const c = state.cache || { nodes: [], raids: [], mounts: [] };
+  const picks = pickedCacheNodes();
+  const pickedSet = new Set(picks);
+  // A node is down when its own checks fail or its RAID or a mount does.
+  const badNodes = new Set([...c.raids.filter((r) => !(r.state_ok && r.ok && r.no_failed)), ...c.mounts.filter((m) => !m.ok)].map(cacheKey));
+  const down = (n) => !(n.status && n.mounts && n.errors) || badNodes.has(cacheKey(n));
+  const q = $("cache-search").value.trim().toLowerCase();
+  const bad = $("cache-bad").checked;
+  const matches = (n) => (!bad || down(n)) && (!q || [n.pool, n.hostname, n.ip, n.node].some((x) => x && x.toLowerCase().includes(q)));
+  const byKey = new Map(c.nodes.map((n) => [cacheKey(n), n]));
+  const top = picks.map((k) => byKey.get(k)).filter(Boolean);
+  const rest = c.nodes.filter((n) => !pickedSet.has(cacheKey(n)) && matches(n));
+  $("cache-count").textContent = rowCount(top.length, rest.length, q || bad);
+  $("cache-clear").hidden = picks.length === 0;
+  $("cache-nodes").innerHTML = [...top, ...rest.slice(0, TABLE_ROWS)].map((n) => {
+    const key = cacheKey(n);
+    const on = pickedSet.has(key);
+    return `<tr class="pickable${on ? " picked" : ""}" data-key="${esc(key)}">
+    <td><input type="checkbox" ${on ? "checked" : ""} aria-label="Show ${esc(n.hostname || n.ip)}'s RAID and mounts"></td>
     <td class="col-pool">${esc(n.pool)}</td>
     <td>${nodeCell(n)}</td>
     <td>${check(n.status, "up", "down")}</td>
@@ -495,9 +621,13 @@ function renderCache(c) {
     <td class="num">${n.disks}</td>
     <td class="num">${size(n.rw_mib)}</td>
     <td class="num">${size(n.r_mib)}</td>
-  </tr>`).join("") || empty(8, "cache nodes");
+  </tr>`;
+  }).join("") || `<tr><td colspan="9" class="dim">${c.nodes.length ? "No cache node matches." : "No cache nodes reported."}</td></tr>`;
 
-  $("cache-raids").innerHTML = c.raids.map((r) => {
+  const pick = (what) => `<tr><td colspan="7" class="dim">Pick nodes in the Cache nodes table to see their ${what}.</td></tr>`;
+  const none = (what) => `<tr><td colspan="7" class="dim">No ${what} reported for the picked nodes.</td></tr>`;
+  const raids = c.raids.filter((r) => pickedSet.has(cacheKey(r)));
+  $("cache-raids").innerHTML = !picks.length ? pick("RAID") : raids.map((r) => {
     const bad = r.members.filter((m) => !m.ok);
     const summary = `${r.members.length - bad.length} of ${r.members.length} active` + (r.total_devices && r.total_devices !== r.members.length ? ` · ${r.total_devices} expected` : "");
     const list = r.members.map((m) => `<li>${esc(m.device)} — ${m.ok ? esc(m.state) : `<b class="st bad">${esc(m.state || "missing")}</b>`}</li>`).join("");
@@ -510,9 +640,10 @@ function renderCache(c) {
       <td>${check(r.no_failed, "none", "failed")}</td>
       <td><details class="members"><summary>${bad.length ? status(summary, "bad") : esc(summary)}</summary><ul>${list}</ul></details></td>
     </tr>`;
-  }).join("") || empty(7, "RAIDs");
+  }).join("") || none("RAID");
 
-  $("cache-mounts").innerHTML = c.mounts.map((m) => `<tr>
+  const mounts = c.mounts.filter((m) => pickedSet.has(cacheKey(m)));
+  $("cache-mounts").innerHTML = !picks.length ? pick("mounts") : mounts.map((m) => `<tr>
     <td class="col-pool">${esc(m.pool)}</td>
     <td>${nodeCell(m)}</td>
     <td>${m.kind === "rw" ? "read-write" : m.kind === "r" ? "read" : esc(m.kind)}</td>
@@ -520,27 +651,58 @@ function renderCache(c) {
     <td class="mono">${esc(m.device)}</td>
     <td class="mono">${esc(m.options)}</td>
     <td>${check(m.ok, "mounted", "down")}</td>
-  </tr>`).join("") || empty(7, "mounts");
+  </tr>`).join("") || none("mounts");
 }
 
+onPick("cache-nodes", "cnodes", pickedCacheNodes, renderCacheRows);
+$("cache-search").addEventListener("input", renderCacheRows);
+$("cache-bad").addEventListener("change", renderCacheRows);
+$("cache-clear").addEventListener("click", () => pickRows("cnodes", [], renderCacheRows));
+
 // --- storage ------------------------------------------------------------
+
+// TABLE_ROWS caps the big tables (nodes, cache nodes, volumes, snapshots):
+// the picked rows, then this many of the others that match the search. Tens
+// of thousands of rows would stall the page.
+const TABLE_ROWS = 200;
 
 function renderStorage(st) {
   warnings(st.warnings);
   renderPick();
-  const vols = picked("volumes");
+  const vols = st.volumes;
   const total = (k) => vols.reduce((a, v) => a + (v[k] || 0), 0);
   const notReady = vols.filter((v) => !v.ready).length;
   $("storage-kpis").innerHTML = [
     kpi("Volumes", vols.length, vols.length ? "" : "none reported"),
     kpi("Not ready", notReady, notReady ? "see the table" : "none", notReady ? "bad" : "good"),
-    kpi("Provisioned", size(total("size_mib")), allItemsPicked("volumes") ? "all volumes" : "picked volumes"),
+    kpi("Provisioned", size(total("size_mib")), "all volumes"),
     kpi("RW cache", size(total("rw_mib")), "write-back"),
     kpi("Read cache", size(total("r_mib")), ""),
   ].join("");
+  renderVolumeRows();
+}
 
-  $("volumes").innerHTML = vols.map((v) => `<tr>
-    <td><span class="swatch" style="background:${slotColor(volumeIndex(v.pool, v.name))}"></span></td>
+// renderVolumeRows lists the picked volumes first, then the others that
+// match the search, up to TABLE_ROWS.
+function renderVolumeRows() {
+  const vols = state.storage?.volumes || [];
+  const picks = pickedVolumes();
+  const pickedSet = new Set(picks);
+  const q = $("vol-search").value.trim().toLowerCase();
+  const bad = $("vol-bad").checked;
+  const matches = (v) => (!bad || !v.ready) && (!q || [v.name, v.pool, v.hostname, v.ip, v.bucket, v.status].some((x) => x && x.toLowerCase().includes(q)));
+  const byKey = new Map(vols.map((v) => [volumeKey(v), v]));
+  const top = picks.map((k) => byKey.get(k)).filter(Boolean);
+  const rest = vols.filter((v) => !pickedSet.has(volumeKey(v)) && matches(v));
+  const shown = [...top, ...rest.slice(0, TABLE_ROWS)];
+  $("vol-count").textContent = rowCount(top.length, rest.length, q || bad);
+  $("vol-clear").hidden = picks.length === 0;
+  $("volumes").innerHTML = shown.map((v) => {
+    const key = volumeKey(v);
+    const on = pickedSet.has(key);
+    return `<tr class="pickable${on ? " picked" : ""}" data-key="${esc(key)}">
+    <td><input type="checkbox" ${on ? "checked" : ""} aria-label="Show ${esc(v.name)} on the charts"></td>
+    <td>${on ? `<span class="swatch" style="background:${slotColor(volumeIndex(v.pool, v.name))}"></span>` : ""}</td>
     <td class="col-pool">${esc(v.pool)}</td>
     <td class="name">${esc(v.name)}</td>
     <td>${check(v.ready, v.status || "READY", v.status || "unknown")}</td>
@@ -551,8 +713,19 @@ function renderStorage(st) {
     <td>${paramsCell(v.extra_params)}</td>
     <td>${v.node ? nodeCell(v) : status("–", "none")}</td>
     <td class="mono">${esc(v.bucket || "–")}</td>
-  </tr>`).join("") || `<tr><td colspan="11" class="dim">No volumes reported.</td></tr>`;
+  </tr>`;
+  }).join("") || `<tr><td colspan="12" class="dim">${vols.length ? "No volume matches." : "No volumes reported."}</td></tr>`;
 }
+
+function redrawVolumes() {
+  renderVolumeRows();
+  document.querySelectorAll("#view-volumes details.row[open]").forEach((d) => renderPanelRow(d).catch((err) => err.auth && showLogin()));
+}
+
+onPick("volumes", "vols", pickedVolumes, redrawVolumes);
+$("vol-search").addEventListener("input", renderVolumeRows);
+$("vol-bad").addEventListener("change", renderVolumeRows);
+$("vol-clear").addEventListener("click", () => pickRows("vols", [], redrawVolumes));
 
 // A volume's QoS caps, as the StorageClass names them, in the hint.
 const QOS = [
@@ -663,8 +836,21 @@ function renderSnapshots(sv) {
     kpi("Logical size", bytes(snaps.reduce((a, s) => a + (s.logical_bytes || 0), 0)), allItemsPicked("snapshots") ? "all snapshots" : "picked volumes"),
   ].join("");
 
+  state.snapRows = snaps;
+  renderSnapshotRows();
+}
+
+// renderSnapshotRows lists the snapshots that match the search, up to
+// TABLE_ROWS.
+function renderSnapshotRows() {
+  const snaps = state.snapRows || [];
+  const q = $("snap-search").value.trim().toLowerCase();
+  const bad = $("snap-bad").checked;
+  const matches = (s) => (!bad || !s.ready) && (!q || [s.name, s.volume, s.pool, s.status, s.kind, s.hostname].some((x) => x && x.toLowerCase().includes(q)));
+  const rows = snaps.filter(matches);
+  $("snap-count").textContent = rowCount(0, rows.length, q || bad);
   const opt = (v, f) => (v == null ? "–" : f(v));
-  $("snapshots").innerHTML = snaps.map((s) => `<tr>
+  $("snapshots").innerHTML = rows.slice(0, TABLE_ROWS).map((s) => `<tr>
     <td class="col-pool">${esc(s.pool)}</td>
     <td class="name">${esc(s.name)}</td>
     <td>${check(s.ready, s.status || "READY", s.status || "unknown")}</td>
@@ -680,8 +866,11 @@ function renderSnapshots(sv) {
     <td class="num">${opt(s.transfers, (v) => v.toFixed(0))}</td>
     <td class="num">${opt(s.speed, (v) => bytes(v, "/s"))}</td>
     <td>${s.node ? nodeCell(s) : status("–", "none")}</td>
-  </tr>`).join("") || `<tr><td colspan="15" class="dim">No snapshots reported.</td></tr>`;
+  </tr>`).join("") || `<tr><td colspan="15" class="dim">${snaps.length ? "No snapshot matches." : "No snapshots reported."}</td></tr>`;
 }
+
+$("snap-search").addEventListener("input", renderSnapshotRows);
+$("snap-bad").addEventListener("change", renderSnapshotRows);
 
 // serverSideCell is the share of the bytes sent that S3 copied server-side,
 // with the bytes in its hint.
@@ -826,8 +1015,10 @@ async function renderPanelRow(d) {
     const panel = el.dataset.panel || id.slice(3);
     try {
       if (id.startsWith("vp-")) {
-        const data = await api(`/api/volume/series?panel=${panel}&${timeQuery()}&${poolQuery()}`);
-        drawChart(id, onlyPicked("volumes", data, (s) => `${s.pool}/${s.volume}`));
+        // Volume charts load only for the volumes picked in the table.
+        const vols = pickedVolumes();
+        if (!vols.length) return emptyChart(id, "Pick volumes in the table above to see their metrics.");
+        drawChart(id, await api(`/api/volume/series?panel=${panel}&${timeQuery()}&${poolQuery()}&vols=${vols.map(encodeURIComponent).join(",")}`));
       } else if (h) {
         drawChart(id, await api(`/api/host/series?${hostQuery(h)}&panel=${panel}&${timeQuery()}`));
       }
@@ -925,9 +1116,12 @@ function zoomTo(u) {
 }
 
 async function renderCharts(metrics) {
+  const nodes = pickedNodes();
   await Promise.all(metrics.map(async (m) => {
     try {
-      const data = await api(`/api/series?metric=${m}&${timeQuery()}&${poolQuery()}`);
+      // The charts load only for the nodes picked in the table.
+      if (!nodes.length) return emptyChart(m, "Pick nodes in the table above to see their metrics.");
+      const data = await api(`/api/series?metric=${m}&${timeQuery()}&${poolQuery()}&nodes=${nodes.map(encodeURIComponent).join(",")}`);
       drawChart(m, data);
     } catch (err) {
       if (err.auth) throw err;

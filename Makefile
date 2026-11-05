@@ -3,7 +3,7 @@ LDFLAGS := -s -w -X github.com/migrx-io/backedblock/internal/cli.Version=$(VERSI
 BINDIR ?= $(HOME)/.local/bin
 TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-.PHONY: help build install test vet fmt fmt-check check cross clean
+.PHONY: help build install test vet fmt fmt-check check cross clean mock-ui
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -16,6 +16,9 @@ install: build ## build bbctl and copy it to ~/.local/bin (BINDIR=... for anothe
 	install -m 0755 bbctl $(BINDIR)/bbctl
 	@echo "installed $(BINDIR)/bbctl"
 	@$(BINDIR)/bbctl version
+
+mock-ui: ## serve bbctl ui on a made-up cluster at :8080 (MOCK="--pools 3 --nodes 5" for another size)
+	go run ./cmd/ui-mock $(MOCK)
 
 test: ## run unit tests
 	go test ./...

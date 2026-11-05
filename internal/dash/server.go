@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -447,6 +448,22 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 	}
 	start, end, step := window(r)
 
+	// Only the nodes the page picked (?nodes=pool/ip,...) are queried: a line
+	// for every node of every pool would be thousands of lines.
+	picked := map[string][]string{}
+	for _, n := range strings.Split(r.URL.Query().Get("nodes"), ",") {
+		if pool, ip, ok := strings.Cut(n, "/"); ok && ip != "" {
+			picked[pool] = append(picked[pool], regexp.QuoteMeta(ip))
+		}
+	}
+	var shown []*pool
+	for _, p := range pools {
+		if len(picked[p.name]) > 0 {
+			shown = append(shown, p)
+		}
+	}
+	pools = shown
+
 	res := make([][]series, len(pools))
 	errs := make([]error, len(pools))
 	each(pools, func(i int, p *pool) {
@@ -454,9 +471,11 @@ func (s *Server) series(w http.ResponseWriter, r *http.Request) {
 			errs[i] = errNoMetrics
 			return
 		}
+		ips := strings.ReplaceAll(strings.Join(picked[p.name], "|"), `\`, `\\`)
+		sel := matchers(p.selector(), `ip=~"`+ips+`"`)
 		// A rate needs at least four scrapes, and must span the step so no
 		// sample falls between points.
-		res[i], errs[i] = p.prom.queryRange(r.Context(), expand(expr, p.selector(), max(step, time.Minute), step), start, end, step)
+		res[i], errs[i] = p.prom.queryRange(r.Context(), expand(expr, sel, max(step, time.Minute), step), start, end, step)
 	})
 	out := grid(start, end, step)
 	for i, p := range pools {
