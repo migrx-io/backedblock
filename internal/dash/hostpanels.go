@@ -22,8 +22,12 @@ import (
 const cores = `scalar(count(count(node_cpu_seconds_total{{sel}}) by (cpu)))`
 
 // Devices in the per-device panels: whole disks and the cache RAID, not
-// partitions or the nbd devices of volumes not in use.
-const panelDisks = `device=~"[a-z]+|nvme[0-9]+n[0-9]+|md[0-9]+"`
+// partitions. The Storage Disk row adds the volumes' nbd devices, as Node
+// Exporter Full's lists every device there.
+const (
+	panelDisks   = `device=~"[a-z]+|nvme[0-9]+n[0-9]+|md[0-9]+"`
+	storageDisks = `device=~"[a-z]+|nvme[0-9]+n[0-9]+|md[0-9]+|nbd[0-9]+"`
+)
 
 // Interfaces in the network panels: no loopback or virtual ones.
 const netDevices = `device!~"lo|veth.*|docker.*|br-.*|virbr.*"`
@@ -34,10 +38,10 @@ const panelFS = `device!~"rootfs"`
 
 // quickQueries are the "Quick CPU / Mem / Disk" row, one value each.
 var quickQueries = map[string]string{
-	"psi_cpu":    `100 * rate(node_pressure_cpu_waiting_seconds_total{{sel}}[{win}])`,
-	"psi_memory": `100 * rate(node_pressure_memory_waiting_seconds_total{{sel}}[{win}])`,
-	"psi_io":     `100 * rate(node_pressure_io_waiting_seconds_total{{sel}}[{win}])`,
-	"psi_irq":    `100 * rate(node_pressure_irq_stalled_seconds_total{{sel}}[{win}])`,
+	"psi_cpu":    `100 * irate(node_pressure_cpu_waiting_seconds_total{{sel}}[{win}])`,
+	"psi_memory": `100 * irate(node_pressure_memory_waiting_seconds_total{{sel}}[{win}])`,
+	"psi_io":     `100 * irate(node_pressure_io_waiting_seconds_total{{sel}}[{win}])`,
+	"psi_irq":    `100 * irate(node_pressure_irq_stalled_seconds_total{{sel}}[{win}])`,
 	"cpu_busy":   `100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"{sel}}[{win}])))`,
 	"sys_load":   `node_load1{{sel}} * 100 / ` + cores,
 	"ram_used":   `clamp_min((1 - node_memory_MemAvailable_bytes{{sel}} / node_memory_MemTotal_bytes{{sel}}) * 100, 0)`,
@@ -54,8 +58,10 @@ var quickQueries = map[string]string{
 // chart point is the latest sample at its time, so over 6h (a 72s step) it
 // would skip most scrapes and a one-scrape spike with them; the subquery
 // evaluates the expression at every scrape in the step. lo is for free and
-// available values, where the dip is the news. Rates need neither: their
-// window spans the step. Totals and limits stay as sampled.
+// available values, where the dip is the news. The irate panels, which plot
+// the last two samples as Node Exporter Full does, take them too; a rate()
+// needs neither, as its window spans the step. Totals and limits stay as
+// sampled.
 func hi(expr string) string { return `max_over_time((` + expr + `)[{step}:15s])` }
 func lo(expr string) string { return `min_over_time((` + expr + `)[{step}:15s])` }
 
@@ -70,25 +76,29 @@ type panel struct {
 	lines []line
 }
 
+// cpuMode is the % of all CPUs in mode. As in Node Exporter Full it is an
+// irate, the last two samples, so short bursts show at their height.
 func cpuMode(mode string) string {
-	return `100 * sum(rate(node_cpu_seconds_total{` + mode + `{sel}}[{win}])) / ` + cores
+	return `100 * sum(irate(node_cpu_seconds_total{` + mode + `{sel}}[{win}])) / ` + cores
 }
 
 func mem(name string) string { return `node_memory_` + name + `_bytes{{sel}}` }
 
-func diskRate(metric string) string {
-	return `rate(node_disk_` + metric + `{` + panelDisks + `{sel}}[{win}])`
+// diskRate is a disk counter's irate per device, as in Node Exporter Full,
+// over the devices given.
+func diskRate(metric, devices string) string {
+	return `irate(node_disk_` + metric + `{` + devices + `{sel}}[{win}])`
 }
 
 var hostPanels = map[string]panel{
 	// Basic CPU / Mem / Net / Disk
 	"cpu_basic": {"percent", []line{
-		{cpuMode(`mode="system"`), "Busy system"},
-		{cpuMode(`mode="user"`), "Busy user"},
-		{cpuMode(`mode="iowait"`), "Busy iowait"},
-		{cpuMode(`mode=~".*irq"`), "Busy IRQs"},
-		{cpuMode(`mode!~"idle|user|system|iowait|irq|softirq"`), "Busy other"},
-		{cpuMode(`mode="idle"`), "Idle"},
+		{hi(cpuMode(`mode="system"`)), "Busy system"},
+		{hi(cpuMode(`mode="user"`)), "Busy user"},
+		{hi(cpuMode(`mode="iowait"`)), "Busy iowait"},
+		{hi(cpuMode(`mode=~".*irq"`)), "Busy IRQs"},
+		{hi(cpuMode(`mode!~"idle|user|system|iowait|irq|softirq"`)), "Busy other"},
+		{lo(cpuMode(`mode="idle"`)), "Idle"},
 	}},
 	"mem_basic": {"bytes", []line{
 		{mem("MemTotal"), "Total"},
@@ -107,14 +117,14 @@ var hostPanels = map[string]panel{
 
 	// CPU / Memory / Net / Disk
 	"cpu": {"percent", []line{
-		{cpuMode(`mode="system"`), "System"},
-		{cpuMode(`mode="user"`), "User"},
-		{cpuMode(`mode="nice"`), "Nice"},
-		{cpuMode(`mode="iowait"`), "Iowait"},
-		{cpuMode(`mode="irq"`), "Irq"},
-		{cpuMode(`mode="softirq"`), "Softirq"},
-		{cpuMode(`mode="steal"`), "Steal"},
-		{cpuMode(`mode="idle"`), "Idle"},
+		{hi(cpuMode(`mode="system"`)), "System"},
+		{hi(cpuMode(`mode="user"`)), "User"},
+		{hi(cpuMode(`mode="nice"`)), "Nice"},
+		{hi(cpuMode(`mode="iowait"`)), "Iowait"},
+		{hi(cpuMode(`mode="irq"`)), "Irq"},
+		{hi(cpuMode(`mode="softirq"`)), "Softirq"},
+		{hi(cpuMode(`mode="steal"`)), "Steal"},
+		{lo(cpuMode(`mode="idle"`)), "Idle"},
 	}},
 	"memory": {"bytes", []line{
 		{hi(mem("MemTotal") + " - " + mem("MemFree") + " - " + mem("Buffers") + " - " + mem("Cached") + " - " + mem("Slab") + " - " + mem("PageTables") + " - " + mem("SwapCached")), "Apps"},
@@ -132,12 +142,12 @@ var hostPanels = map[string]panel{
 		{`100 * rate(node_network_transmit_bytes_total{` + netDevices + `{sel}}[{win}]) / ignoring(speed) node_network_speed_bytes{speed!="-1",` + netDevices + `{sel}}`, "{{device}} tx"},
 	}},
 	"disk_iops": {"ops", []line{
-		{diskRate("reads_completed_total"), "{{device}} read"},
-		{diskRate("writes_completed_total"), "{{device}} write"},
+		{hi(diskRate("reads_completed_total", panelDisks)), "{{device}} read"},
+		{hi(diskRate("writes_completed_total", panelDisks)), "{{device}} write"},
 	}},
 	"disk_throughput": {"bytes_rate", []line{
-		{diskRate("read_bytes_total"), "{{device}} read"},
-		{diskRate("written_bytes_total"), "{{device}} write"},
+		{hi(diskRate("read_bytes_total", panelDisks)), "{{device}} read"},
+		{hi(diskRate("written_bytes_total", panelDisks)), "{{device}} write"},
 	}},
 	"fs_avail": {"bytes", []line{
 		// Grafana's panel also has free and size, hidden.
@@ -147,7 +157,7 @@ var hostPanels = map[string]panel{
 		{hi(`node_filesystem_size_bytes{` + panelFS + `{sel}} - node_filesystem_avail_bytes{` + panelFS + `{sel}}`), "{{mountpoint}}"},
 	}},
 	"disk_util": {"percent", []line{
-		{`100 * ` + diskRate("io_time_seconds_total"), "{{device}}"},
+		{hi(`100 * ` + diskRate("io_time_seconds_total", panelDisks)), "{{device}}"},
 	}},
 	"psi": {"percent", []line{
 		{`100 * rate(node_pressure_cpu_waiting_seconds_total{{sel}}[{win}])`, "CPU some"},
@@ -219,34 +229,41 @@ var hostPanels = map[string]panel{
 		{`node_memory_HugePages_Total{{sel}} * ` + mem("Hugepagesize"), "Total"},
 	}},
 
-	// Storage Disk (its IOps and data panels are disk_iops and
-	// disk_throughput above)
+	// Storage Disk
+	"storage_disk_iops": {"ops", []line{
+		{hi(diskRate("reads_completed_total", storageDisks)), "{{device}} read"},
+		{hi(diskRate("writes_completed_total", storageDisks)), "{{device}} write"},
+	}},
+	"storage_disk_throughput": {"bytes_rate", []line{
+		{hi(diskRate("read_bytes_total", storageDisks)), "{{device}} read"},
+		{hi(diskRate("written_bytes_total", storageDisks)), "{{device}} write"},
+	}},
 	"disk_wait": {"seconds", []line{
-		{diskRate("read_time_seconds_total") + " / " + diskRate("reads_completed_total"), "{{device}} read"},
-		{diskRate("write_time_seconds_total") + " / " + diskRate("writes_completed_total"), "{{device}} write"},
+		{hi(diskRate("read_time_seconds_total", storageDisks) + " / " + diskRate("reads_completed_total", storageDisks)), "{{device}} read"},
+		{hi(diskRate("write_time_seconds_total", storageDisks) + " / " + diskRate("writes_completed_total", storageDisks)), "{{device}} write"},
 	}},
 	"disk_queue": {"count", []line{
-		{diskRate("io_time_weighted_seconds_total"), "{{device}}"},
+		{hi(diskRate("io_time_weighted_seconds_total", storageDisks)), "{{device}}"},
 	}},
 	"disk_merged": {"ops", []line{
-		{diskRate("reads_merged_total"), "{{device}} read"},
-		{diskRate("writes_merged_total"), "{{device}} write"},
+		{hi(diskRate("reads_merged_total", storageDisks)), "{{device}} read"},
+		{hi(diskRate("writes_merged_total", storageDisks)), "{{device}} write"},
 	}},
 	"disk_time": {"percent", []line{
-		{`100 * ` + diskRate("io_time_seconds_total"), "{{device}} IO"},
-		{`100 * ` + diskRate("discard_time_seconds_total"), "{{device}} discard"},
-		{`100 * ` + diskRate("flush_requests_time_seconds_total"), "{{device}} flush"},
+		{hi(`100 * ` + diskRate("io_time_seconds_total", storageDisks)), "{{device}} IO"},
+		{hi(`100 * ` + diskRate("discard_time_seconds_total", storageDisks)), "{{device}} discard"},
+		{hi(`100 * ` + diskRate("flush_requests_time_seconds_total", storageDisks)), "{{device}} flush"},
 	}},
 	"disk_discards": {"ops", []line{
-		{diskRate("discards_completed_total"), "{{device}} discards completed"},
-		{diskRate("discards_merged_total"), "{{device}} discards merged"},
-		{diskRate("flush_requests_total"), "{{device}} flush"},
+		{hi(diskRate("discards_completed_total", storageDisks)), "{{device}} discards completed"},
+		{hi(diskRate("discards_merged_total", storageDisks)), "{{device}} discards merged"},
+		{hi(diskRate("flush_requests_total", storageDisks)), "{{device}} flush"},
 	}},
 	"disk_discarded_sectors": {"count", []line{
-		{diskRate("discarded_sectors_total"), "{{device}}"},
+		{hi(diskRate("discarded_sectors_total", storageDisks)), "{{device}}"},
 	}},
 	"disk_io_now": {"count", []line{
-		{hi(`node_disk_io_now{` + panelDisks + `{sel}}`), "{{device}}"},
+		{hi(`node_disk_io_now{` + storageDisks + `{sel}}`), "{{device}}"},
 	}},
 }
 

@@ -402,7 +402,7 @@ func TestSnapshots(t *testing.T) {
 		t.Fatalf("snapshots: %d %v", code, out)
 	}
 	sum := out["summary"].(map[string]any)
-	want := map[string]float64{"snapshots": 2, "ready": 1, "not_ready": 1, "logical_bytes": 200e6}
+	want := map[string]float64{"snapshots": 2, "ready": 1, "not_ready": 1, "logical_bytes": 200 << 20}
 	for k, v := range want {
 		if sum[k] != v {
 			t.Errorf("summary %s = %v, want %v", k, sum[k], v)
@@ -413,7 +413,7 @@ func TestSnapshots(t *testing.T) {
 	if s["name"] != "snap-node-a" || s["ready"] != true || s["hostname"] != "node-a" || s["volume"] != "vol-node-a" {
 		t.Errorf("snapshot a (hostname from core_cluster_nodes): %v", s)
 	}
-	stats := map[string]float64{"logical_bytes": 100e6, "bytes": 1000, "server_side_bytes": 250, "transfer_errors": 1, "elapsed": 30, "speed": 5}
+	stats := map[string]float64{"logical_bytes": 100 << 20, "bytes": 1000, "server_side_bytes": 250, "transfer_errors": 1, "elapsed": 30, "speed": 5}
 	for k, v := range stats {
 		if s[k] != v {
 			t.Errorf("snapshot a %s = %v, want %v", k, s[k], v)
@@ -428,7 +428,7 @@ func TestSnapshots(t *testing.T) {
 	}
 
 	_, out = c.do("GET", "/api/snapshots?pool=all", "")
-	if sum := out["summary"].(map[string]any); sum["snapshots"] != 3.0 || sum["logical_bytes"] != 300e6 {
+	if sum := out["summary"].(map[string]any); sum["snapshots"] != 3.0 || sum["logical_bytes"] != float64(300<<20) {
 		t.Errorf("all pools summary: %v", sum)
 	}
 }

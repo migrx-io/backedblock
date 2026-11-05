@@ -37,9 +37,9 @@ type SnapshotSummary struct {
 }
 
 // Snapshot is one row of the snapshot table, with its transfer stats. Sizes
-// are in bytes (the plugin reports the logical size in MB), times in
-// seconds, speed in bytes per second; a stat the plugin did not report is
-// missing.
+// are in bytes (the plugin reports the logical size in MiB, the volume's
+// size), times in seconds, speed in bytes per second; a stat the plugin did
+// not report is missing.
 type Snapshot struct {
 	Pool        string `json:"pool"`
 	Name        string `json:"name"`
@@ -166,7 +166,7 @@ func (p *pool) snapshots(ctx context.Context) ([]Snapshot, error) {
 		if f := out[i].stat(x.Labels["__name__"]); f != nil {
 			v := x.Value
 			if x.Labels["__name__"] == "snapshot_size" {
-				v *= 1e6
+				v *= 1 << 20
 			}
 			*f = &v
 		}
