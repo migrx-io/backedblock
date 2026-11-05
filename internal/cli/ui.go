@@ -182,7 +182,7 @@ func (a *app) uiConfig(ctx context.Context, d *deploy.Deployment, only string) (
 	cfg := dash.Config{
 		Cluster:   d.Cfg.Cluster,
 		Gateway:   fwds[0].addr,
-		LoginHint: "bbctl secrets get " + d.Cfg.Name + " MGX_GW_ADMIN_PASSWD",
+		LoginHint: "bbctl secrets get <config> " + scPasswordKey,
 	}
 	for _, p := range shown {
 		dp := dash.Pool{Name: p}
