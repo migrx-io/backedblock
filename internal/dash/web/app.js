@@ -1030,7 +1030,6 @@ window.addEventListener("resize", () => {
     const info = await api("/api/info");
     state.pools = info.pools || [];
     $("cluster").textContent = info.cluster;
-    document.title = `${info.cluster} · bbctl ui`;
     $("login-cluster").textContent = `cluster ${info.cluster}`;
     if (info.login_hint) {
       $("login-hint").textContent = info.login_hint;
