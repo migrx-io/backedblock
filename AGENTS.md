@@ -40,6 +40,11 @@ for the CSI driver. When the workload needs several pools, a management plane
 is added in front of them unless you pass `--mgmt=false`. Ask the human which
 they want.
 
+If AWS denies the lookups (VPCs, subnets, AZs, instance types), `config
+create` still succeeds and writes placeholders such as `<vpc id>`, listed in
+the result's `placeholders`. `plan` fails with exit code 2 until they are
+replaced. Ask the human for the real values, then edit `<name>.bbctl.yaml`.
+
 The storage name is the first argument of every command that uses a config,
 e.g. `bbctl pool add <name> pool2` or `bbctl exec <name> -- uptime`, and it is
 required. `bbctl config list --json` lists them.

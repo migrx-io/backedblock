@@ -228,9 +228,52 @@ var (
 	bucketRe = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
 )
 
+// IsPlaceholder reports whether s is a placeholder such as <vpc id>, written by
+// config create where its credentials could not look the value up.
+func IsPlaceholder(s string) bool {
+	return len(s) > 2 && strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">")
+}
+
+// Placeholders lists the fields that still hold a placeholder, as
+// "field: <value>".
+func (c *Config) Placeholders() []string {
+	var ph []string
+	check := func(field, v string) {
+		if IsPlaceholder(v) {
+			ph = append(ph, field+": "+v)
+		}
+	}
+	checkAll := func(field string, vs []string) {
+		for i, v := range vs {
+			check(fmt.Sprintf("%s[%d]", field, i), v)
+		}
+	}
+	check("nodes_ami", c.NodesAMI)
+	check("network.vpc_id", c.Network.VPCID)
+	checkAll("network.azs", c.Network.AZs)
+	checkAll("network.mgmt_subnet_cidrs", c.Network.MgmtSubnetCIDRs)
+	checkAll("network.storage_subnet_cidrs", c.Network.StorageSubnetCIDRs)
+	check("network.nat_public_subnet_id", c.Network.NATPublicSubnetID)
+	for i, p := range c.Pools {
+		check(fmt.Sprintf("pools[%d].az", i), p.AZ)
+	}
+	return ph
+}
+
 // Validate returns every problem found, not just the first, so one run tells
-// the caller everything to fix.
+// the caller everything to fix. Placeholders count as problems: Terraform
+// would fail on them.
 func (c *Config) Validate() []string {
+	errs := c.ValidateDraft()
+	for _, p := range c.Placeholders() {
+		errs = append(errs, p+" is a placeholder; replace it with the real value")
+	}
+	return errs
+}
+
+// ValidateDraft is Validate without the placeholder check, for config create,
+// which writes placeholders for what it could not look up.
+func (c *Config) ValidateDraft() []string {
 	var errs []string
 	add := func(f string, a ...any) { errs = append(errs, fmt.Sprintf(f, a...)) }
 

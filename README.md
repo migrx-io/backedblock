@@ -228,6 +228,11 @@ the result also carries the estimate and the StorageClass parameters. Every
 question has a flag (see `bbctl config create --help`). A flag that is given
 is not asked, and without a terminal nothing is asked.
 
+If your credentials may not list VPCs, subnets, AZs or instance types,
+`config create` still writes the file, with placeholders such as `<vpc id>`,
+`<az 1>` or `<mgmt subnet cidr 1>` where it could not look a value up. It
+lists them, and `plan` and `apply` refuse the config until you replace them.
+
 Each storage is one file, `NAME.bbctl.yaml`, and one deployment. Several can
 share a directory: every command that uses a config takes the name as its
 first argument (`bbctl plan NAME`, `bbctl pool add NAME pool2`).

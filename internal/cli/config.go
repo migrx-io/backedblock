@@ -82,7 +82,10 @@ type configResult struct {
 	Estimate     *estimate.Result `json:"estimate,omitempty"`
 	StorageClass string           `json:"storage_class,omitempty"`
 	Settings     *config.Config   `json:"settings"`
-	Next         []string         `json:"next"`
+	// Placeholders lists the fields written as <...> because AWS denied the
+	// lookup; plan and apply reject the config until they are replaced.
+	Placeholders []string `json:"placeholders,omitempty"`
+	Next         []string `json:"next"`
 }
 
 func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) error {
@@ -118,7 +121,7 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 	}
 	ui.Logf("account %s, region %s", id.Account, c.Region())
 
-	vpc, err := chooseVPC(ctx, c, o.vpc)
+	vpc, err := chooseVPC(ctx, c, flags, o.vpc)
 	if err != nil {
 		return err
 	}
@@ -166,10 +169,13 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 	azs := o.azs
 	if len(azs) == 0 {
 		offered, err := c.AZsOffering(ctx, types...)
-		if err != nil {
+		switch {
+		case awsx.IsDenied(err):
+			ui.Logf("cannot list AZs, writing placeholders: %v", err)
+			offered = []string{"<az 1>", "<az 2>", "<az 3>"}
+		case err != nil:
 			return ui.Wrap(ui.ExitAWS, "", err)
-		}
-		if len(offered) == 0 {
+		case len(offered) == 0:
 			return ui.Errf(ui.ExitAWS, "pick another type with --instance-type",
 				"%v not offered in any AZ of %s", types, c.Region())
 		}
@@ -177,22 +183,44 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 	}
 	ui.Logf("azs %v", azs)
 
-	subnets, err := c.Subnets(ctx, vpc.ID)
-	if err != nil {
-		return ui.Wrap(ui.ExitAWS, "", err)
-	}
-	// The NAT gateway goes in a public subnet, preferably in the first AZ.
-	var used []string
-	nat, natInFirstAZ := "", false
-	for _, s := range subnets {
-		used = append(used, s.CIDR)
-		if s.Public && !natInFirstAZ && (nat == "" || s.AZ == azs[0]) {
-			nat, natInFirstAZ = s.ID, s.AZ == azs[0]
+	// Without permission to list the VPC or its subnets, the subnet CIDRs and
+	// the NAT subnet become placeholders.
+	var cidrs []string
+	nat, listed := "", false
+	if !config.IsPlaceholder(vpc.ID) {
+		subnets, err := c.Subnets(ctx, vpc.ID)
+		switch {
+		case awsx.IsDenied(err):
+			ui.Logf("cannot list subnets of %s, writing placeholders: %v", vpc.ID, err)
+		case err != nil:
+			return ui.Wrap(ui.ExitAWS, "", err)
+		default:
+			listed = true
+			// The NAT gateway goes in a public subnet, preferably in the first AZ.
+			var used []string
+			natInFirstAZ := false
+			for _, s := range subnets {
+				used = append(used, s.CIDR)
+				if s.Public && !natInFirstAZ && (nat == "" || s.AZ == azs[0]) {
+					nat, natInFirstAZ = s.ID, s.AZ == azs[0]
+				}
+			}
+			if len(vpc.CIDRs) > 0 { // unknown when the VPC came from --vpc without DescribeVpcs
+				if cidrs, err = awsx.FreeCIDRs(vpc.CIDRs, used, 2*len(azs)); err != nil {
+					return ui.Wrap(ui.ExitAWS, "add a secondary CIDR to the VPC or pick another --vpc", err)
+				}
+			}
 		}
 	}
-	cidrs, err := awsx.FreeCIDRs(vpc.CIDRs, used, 2*len(azs))
-	if err != nil {
-		return ui.Wrap(ui.ExitAWS, "add a secondary CIDR to the VPC or pick another --vpc", err)
+	if cidrs == nil {
+		for _, kind := range []string{"mgmt", "storage"} {
+			for i := range azs {
+				cidrs = append(cidrs, fmt.Sprintf("<%s subnet cidr %d>", kind, i+1))
+			}
+		}
+	}
+	if !listed {
+		nat = "<public subnet id>"
 	}
 	if o.natSubnet != "" {
 		nat = o.natSubnet
@@ -208,15 +236,20 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 	ami := o.ami
 	if ami == "" {
 		arch, err := c.Arch(ctx, sized.InstanceType)
-		if err != nil {
+		switch {
+		case awsx.IsDenied(err):
+			ui.Logf("cannot look up %s, writing a placeholder AMI: %v", sized.InstanceType, err)
+			ami = "<ami id>"
+		case err != nil:
 			return ui.Wrap(ui.ExitAWS, "", err)
+		default:
+			im, err := awsx.PublishedAMI(ctx, c.Region(), arch)
+			if err != nil {
+				return ui.Wrap(ui.ExitAWS, "pass --ami; published IDs are at https://backedblock.io/docs/node-amis", err)
+			}
+			ami = im.ID
+			ui.Logf("node ami %s (%s)", im.ID, im.Name)
 		}
-		im, err := awsx.PublishedAMI(ctx, c.Region(), arch)
-		if err != nil {
-			return ui.Wrap(ui.ExitAWS, "pass --ami; published IDs are at https://backedblock.io/docs/node-amis", err)
-		}
-		ami = im.ID
-		ui.Logf("node ami %s (%s)", im.ID, im.Name)
 	}
 
 	cfg := &config.Config{
@@ -247,7 +280,7 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 		cfg.Pools = append(cfg.Pools, p)
 	}
 
-	if errs := cfg.Validate(); len(errs) > 0 {
+	if errs := cfg.ValidateDraft(); len(errs) > 0 {
 		e := ui.Errf(ui.ExitUsage, "override the offending values with flags", "generated config is invalid")
 		e.Details = errs
 		return e
@@ -259,7 +292,11 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 	res := configResult{
 		Config: path, Storage: name, Account: id.Account, Estimate: est, Settings: cfg,
 		StorageClass: est.Config.StorageClass,
+		Placeholders: cfg.Placeholders(),
 		Next:         []string{"review " + path, "bbctl apply " + name},
+	}
+	if len(res.Placeholders) > 0 {
+		res.Next[0] = "replace the placeholders in " + path + " (these credentials could not look them up)"
 	}
 	return ui.Result(res, func(w io.Writer) { printConfigResult(w, res, vpc, pools) })
 }
@@ -317,6 +354,12 @@ func printConfigResult(w io.Writer, res configResult, vpc awsx.VPC, pools int) {
 	if est := res.Estimate; est != nil {
 		in := est.Inputs
 		fmt.Fprintf(w, "  workload     %v volumes x %v GB, %v MB/s, %v IOPS each\n", in["volumeCount"], in["volumeGB"], in["writeMBps"], in["iops"])
+	}
+	if len(res.Placeholders) > 0 {
+		fmt.Fprintf(w, "\nplaceholders (no permission to look them up), fill in before plan:\n")
+		for _, p := range res.Placeholders {
+			fmt.Fprintf(w, "  %s\n", p)
+		}
 	}
 	fmt.Fprintf(w, "\nnext:\n")
 	for _, n := range res.Next {
@@ -410,8 +453,16 @@ func (a *app) configListCmd() *cobra.Command {
 	}
 }
 
-func chooseVPC(ctx context.Context, c *awsx.Client, want string) (awsx.VPC, error) {
+func chooseVPC(ctx context.Context, c *awsx.Client, flags *pflag.FlagSet, want string) (awsx.VPC, error) {
 	vpcs, err := c.VPCs(ctx)
+	if awsx.IsDenied(err) {
+		// Its CIDRs stay unknown, so the subnet CIDRs become placeholders.
+		ui.Logf("cannot list VPCs: %v", err)
+		if want != "" {
+			return awsx.VPC{ID: want}, nil
+		}
+		return awsx.VPC{ID: ask(flags, "vpc", "VPC ID", "<vpc id>")}, nil
+	}
 	if err != nil {
 		return awsx.VPC{}, ui.Wrap(ui.ExitAWS, "", err)
 	}

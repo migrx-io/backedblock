@@ -41,6 +41,23 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestPlaceholders(t *testing.T) {
+	c := valid()
+	c.Network.VPCID = "<vpc id>"
+	c.Network.AZs = []string{"<az 1>"}
+	c.Pools[0].AZ = "<az 1>"
+	if errs := c.ValidateDraft(); len(errs) > 0 {
+		t.Errorf("draft with placeholders rejected: %v", errs)
+	}
+	want := []string{"network.vpc_id: <vpc id>", "network.azs[0]: <az 1>", "pools[0].az: <az 1>"}
+	if got := c.Placeholders(); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("Placeholders() = %q, want %q", got, want)
+	}
+	if errs := c.Validate(); len(errs) != len(want) {
+		t.Errorf("Validate() must reject each placeholder, got %q", errs)
+	}
+}
+
 func TestSaveLoad(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "bbctl.yaml")
 	c := valid()

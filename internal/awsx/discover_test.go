@@ -1,12 +1,15 @@
 package awsx
 
 import (
+	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
 )
 
 func TestFreeCIDRs(t *testing.T) {
@@ -109,6 +112,23 @@ func TestRoutesToIGW(t *testing.T) {
 	for _, tt := range tests {
 		if got := routesToIGW(tt.rt); got != tt.want {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestIsDenied(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want bool
+	}{
+		{&smithy.GenericAPIError{Code: "UnauthorizedOperation"}, true},
+		{fmt.Errorf("describe vpcs: %w", &smithy.GenericAPIError{Code: "AccessDenied"}), true},
+		{&smithy.GenericAPIError{Code: "RequestLimitExceeded"}, false},
+		{errors.New("dial tcp: timeout"), false},
+		{nil, false},
+	} {
+		if got := IsDenied(tc.err); got != tc.want {
+			t.Errorf("IsDenied(%v) = %v, want %v", tc.err, got, tc.want)
 		}
 	}
 }

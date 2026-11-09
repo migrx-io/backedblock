@@ -14,7 +14,22 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
 )
+
+// IsDenied reports whether AWS refused the call for lack of permission, as
+// opposed to a network or throttling error.
+func IsDenied(err error) bool {
+	var ae smithy.APIError
+	if !errors.As(err, &ae) {
+		return false
+	}
+	switch ae.ErrorCode() {
+	case "UnauthorizedOperation", "AccessDenied", "AccessDeniedException":
+		return true
+	}
+	return false
+}
 
 type Client struct {
 	Cfg aws.Config
