@@ -21,6 +21,12 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# Notes come from CHANGELOG.md (--release-notes in release.yml). Re-running on an existing
+# release replaces its notes and files.
+release:
+  mode: replace
+  replace_existing_artifacts: true
+
 # Homebrew: create migrx-io/homebrew-tap, then uncomment.
 # brews:
 #   - repository:

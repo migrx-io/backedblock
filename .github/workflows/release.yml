@@ -21,9 +21,13 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./... && go test ./...
+      # The release notes are this tag's section of CHANGELOG.md.
+      - run: |
+          awk -v h="## ${GITHUB_REF_NAME}" '$0==h{f=1;next} /^## /{f=0} f' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          test -s "$RUNNER_TEMP/notes.md" || { echo "no '## ${GITHUB_REF_NAME}' section in CHANGELOG.md"; exit 1; }
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes ${{ runner.temp }}/notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
