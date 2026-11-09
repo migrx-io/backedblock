@@ -45,5 +45,22 @@ curl -fsSL "$base/checksums.txt" -o "$tmp/checksums.txt"
 tar -xzf "$tmp/$archive" -C "$tmp" bbctl
 install -m 0755 "$tmp/bbctl" "$dir/bbctl"
 
-echo "installed $("$dir/bbctl" version) to $dir/bbctl"
-case ":$PATH:" in *":$dir:"*) ;; *) echo "note: add $dir to your PATH" ;; esac
+echo "installed $dir/bbctl"
+"$dir/bbctl" version
+
+# Not on PATH: print the line for the user's shell rather than edit their rc file.
+case ":$PATH:" in *":$dir:"*) exit 0 ;; esac
+case "$dir" in "$HOME"/*) pdir="\$HOME/${dir#"$HOME"/}" ;; *) pdir=$dir ;; esac
+case "$(basename "${SHELL:-sh}")" in
+  zsh) rc="~/.zshrc"; line="export PATH=\"$pdir:\$PATH\"" ;;
+  bash) if [ "$os" = darwin ]; then rc="~/.bash_profile"; else rc="~/.bashrc"; fi
+        line="export PATH=\"$pdir:\$PATH\"" ;;
+  fish) rc="~/.config/fish/config.fish"; line="fish_add_path $pdir" ;;
+  *) rc="~/.profile"; line="export PATH=\"$pdir:\$PATH\"" ;;
+esac
+echo
+echo "$dir is not on your PATH. Add it with:"
+echo
+echo "  echo '$line' >> $rc"
+echo
+echo "then open a new terminal, or run bbctl as $dir/bbctl until then."
