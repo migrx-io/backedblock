@@ -204,7 +204,7 @@ only need AWS credentials.**
 
 ```bash
 # Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/migrx-io/backedblock/main/install.sh | sh
+curl -fsSL https://backedblock.io/install.sh | sh
 
 # Windows: download bbctl_windows_amd64.zip (or _arm64) from
 # https://github.com/migrx-io/backedblock/releases/latest and put bbctl.exe on your PATH

@@ -2,7 +2,7 @@
 # Install bbctl from the latest GitHub release (Linux and macOS; Windows users
 # download the .zip from the releases page, see README).
 #
-#   curl -fsSL https://raw.githubusercontent.com/migrx-io/backedblock/main/install.sh | sh
+#   curl -fsSL https://backedblock.io/install.sh | sh
 #
 # BBCTL_VERSION=v0.1.0 pins a release; BBCTL_INSTALL_DIR overrides the target
 # (default /usr/local/bin if writable, else ~/.local/bin).
