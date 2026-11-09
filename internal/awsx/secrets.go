@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -19,10 +20,9 @@ var SecretKeys = []string{
 	"CASS_USER", "CASS_PASSWD",
 	"MGX_GW_X_API_KEY", "MGX_X_API_KEY",
 	"MGX_GW_ADMIN_PASSWD",
-	"GRAFANA_USER", "GRAFANA_PASSWD",
 }
 
-var fixedSecrets = map[string]string{"CASS_USER": "mgx", "GRAFANA_USER": "admin"}
+var fixedSecrets = map[string]string{"CASS_USER": "mgx"}
 
 // GenerateSecrets returns random values for every key; user names are fixed.
 func GenerateSecrets() (map[string]string, error) {
@@ -54,10 +54,22 @@ func randomString(n int) (string, error) {
 	return string(b), nil
 }
 
-// FormatSecrets renders the secrets.env content nodes expect.
+// FormatSecrets renders the secrets.env content nodes expect: every
+// required key, then any other keys already set, sorted. Older node images
+// read keys bbctl no longer generates, so rewriting a secret keeps them.
 func FormatSecrets(s map[string]string) string {
 	var b strings.Builder
 	for _, k := range SecretKeys {
+		fmt.Fprintf(&b, "%s=%q\n", k, s[k])
+	}
+	var extra []string
+	for k, v := range s {
+		if v != "" && !slices.Contains(SecretKeys, k) {
+			extra = append(extra, k)
+		}
+	}
+	slices.Sort(extra)
+	for _, k := range extra {
 		fmt.Fprintf(&b, "%s=%q\n", k, s[k])
 	}
 	return b.String()

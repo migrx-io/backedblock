@@ -45,9 +45,6 @@ func (a *app) poolAddCmd() *cobra.Command {
 			mgmtAdded := withMgmt && c.Mgmt == nil
 			if mgmtAdded {
 				c.Mgmt = config.DefaultMgmt()
-				for i := range c.Pools {
-					c.Pools[i].EnableGrafana = false
-				}
 			}
 			if az == "" {
 				az = c.Network.AZs[len(c.Pools)%len(c.Network.AZs)]
@@ -68,8 +65,6 @@ func (a *app) poolAddCmd() *cobra.Command {
 			if nodes > 0 {
 				p.NodesCount = nodes
 			}
-			// An independent pool runs its own Grafana; under mgmt it runs there.
-			p.EnableGrafana = c.Mgmt == nil
 			// Its volumes are the same workload as the first pool's.
 			if len(c.Pools) > 0 {
 				p.StorageClass = maps.Clone(c.Pools[0].StorageClass)
@@ -87,11 +82,11 @@ func (a *app) poolAddCmd() *cobra.Command {
 			if mgmtAdded {
 				notes = []string{
 					fmt.Sprintf("added a management plane (%d x %s)", c.Mgmt.NodesCount, c.Mgmt.InstanceType),
-					"existing pools switch to mgmt-federated metrics and Grafana moves to mgmt; their nodes re-provision on apply",
+					"existing pools switch to mgmt-federated metrics; their nodes re-provision on apply",
 					"after apply, point the CSI driver at the mgmt nodes (outputs.node_private_ips of the mgmt stack in `bbctl status " + c.Name + " --json`)",
 				}
 			} else if c.Mgmt == nil {
-				notes = []string{"independent pool: its own API endpoints (outputs.node_mgmt_private_ips of pool/" + p.Name + ") and its own Grafana"}
+				notes = []string{"independent pool: its own API endpoints (outputs.node_mgmt_private_ips of pool/" + p.Name + ")"}
 			}
 			res := map[string]any{"pool": p, "mgmt": c.Mgmt != nil, "mgmt_added": mgmtAdded, "notes": notes, "next": "bbctl apply " + c.Name}
 			return ui.Result(res, func(w io.Writer) {

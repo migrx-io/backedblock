@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// The host detail: the rows of the "Node Exporter Full" Grafana dashboard
+// The host detail: the rows of the "Node Exporter Full" dashboard
 // (1860) for one node. Queries use {sel} and {{sel}} for the pool and host
 // matchers and {win} for the rate window, as expand fills them. Ratios the
 // dashboard shows as 0-1 are scaled to percent here.
@@ -150,7 +150,7 @@ var hostPanels = map[string]panel{
 		{hi(diskRate("written_bytes_total", panelDisks)), "{{device}} write"},
 	}},
 	"fs_avail": {"bytes", []line{
-		// Grafana's panel also has free and size, hidden.
+		// The dashboard's panel also has free and size, hidden.
 		{lo(`node_filesystem_avail_bytes{` + panelFS + `{sel}}`), "{{mountpoint}}"},
 	}},
 	"fs_used": {"bytes", []line{

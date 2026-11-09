@@ -37,10 +37,9 @@ func (a *app) uiCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ui",
 		Short: "open a dashboard of the storage's pools in the browser",
-		Long: `Open a dashboard of the storage's pools in the browser: the data of the
-mgx-metrics Grafana dashboards, read from the clusters' Prometheus. bbctl
-reaches it over SSM port forwards and serves the page on 127.0.0.1 until
-Ctrl-C.`,
+		Long: `Open a dashboard of the storage's pools in the browser: the clusters'
+metrics, read from their Prometheus. bbctl reaches it over SSM port forwards
+and serves the page on 127.0.0.1 until Ctrl-C.`,
 		Example: `  bbctl ui prod
   bbctl ui prod --pool pool2 --port 8081`,
 		RunE: func(cmd *cobra.Command, _ []string) error {

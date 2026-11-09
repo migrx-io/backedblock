@@ -81,7 +81,6 @@ type Mgmt struct {
 	NodesCount    int    `yaml:"nodes_count"`
 	InstanceType  string `yaml:"instance_type"`
 	EnableMetrics bool   `yaml:"enable_metrics"`
-	EnableGrafana bool   `yaml:"enable_grafana"`
 	// Extra is passed through to the mgmt module as-is (any module variable).
 	Extra map[string]any `yaml:"extra,omitempty"`
 }
@@ -105,7 +104,6 @@ type Pool struct {
 	S3BucketAccess   []string    `yaml:"s3_bucket_access_names,omitempty"`
 	S3ForceDestroy   bool        `yaml:"s3_force_destroy"`
 	EnableMetrics    bool        `yaml:"enable_metrics"`
-	EnableGrafana    bool        `yaml:"enable_grafana"`
 
 	// StorageClass is the parameters of the pool's Kubernetes StorageClass,
 	// e.g. qos_rw_ios_per_sec or max_cache_r_cache_size, as the CSI driver

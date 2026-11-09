@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// The Cache view: the mgx-metrics "Cache" Grafana dashboard. The cache
+// The Cache view: the mgx-metrics "Cache" dashboard. The cache
 // plugin reports its state as labels on three series, where "1" means OK and
 // "0" means down. The queries are the dashboard's: topk by the row's key
 // keeps only the newest label set, since a changed label starts a new series.

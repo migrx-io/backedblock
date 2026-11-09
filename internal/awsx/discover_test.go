@@ -2,6 +2,7 @@ package awsx
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -67,6 +68,26 @@ func TestSecretsRoundTrip(t *testing.T) {
 	}
 	if m := MissingSecrets(ParseSecrets(`CASS_USER="<CASS_USER>"`)); len(m) != len(SecretKeys) {
 		t.Fatalf("placeholders should count as missing, got %v", m)
+	}
+}
+
+// Keys bbctl doesn't generate are kept when a secret is rewritten, since
+// older node images may read them.
+func TestExtraSecretsKept(t *testing.T) {
+	s, err := GenerateSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := FormatSecrets(s); strings.Contains(out, "OLD_") {
+		t.Errorf("generated secrets have extra keys:\n%s", out)
+	}
+	s["OLD_USER"], s["OLD_PASSWD"] = "admin", "pw"
+	got := ParseSecrets(FormatSecrets(s))
+	if got["OLD_USER"] != "admin" || got["OLD_PASSWD"] != "pw" {
+		t.Errorf("optional keys not kept: %v", got)
+	}
+	if m := MissingSecrets(got); len(m) != 0 {
+		t.Errorf("missing %v", m)
 	}
 }
 

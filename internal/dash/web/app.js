@@ -927,7 +927,7 @@ async function renderPanelRow(d) {
   const h = selectedHost();
   await Promise.all([...d.querySelectorAll(".chart")].map(async (el) => {
     const id = el.id.replace(/^chart-/, "");
-    // A panel shown in two rows, as in Grafana, names it in data-panel.
+    // A panel shown in two rows names it in data-panel.
     const panel = el.dataset.panel || id.slice(3);
     try {
       if (id.startsWith("vp-")) {
@@ -971,8 +971,7 @@ function lineLook(s, i) {
   return { label: nodeName(s.pool, s.ip), stroke: nodeColor(s.pool, s.ip) };
 }
 
-// The charts' time: a window dragged on a chart (from/to in the hash, as
-// Grafana keeps it in the URL), or else the last state.range seconds.
+// The charts' time: a window dragged on a chart (from/to in the hash), or else the last state.range seconds.
 function zoomed() {
   const h = hashParams();
   return h.from && h.to ? { from: Number(h.from), to: Number(h.to) } : null;
@@ -1082,7 +1081,7 @@ function drawChart(metric, data) {
     width: el.clientWidth || 600,
     height: 220,
     padding: [8, 8, 0, 0],
-    // Dragging across the plot zooms the page to that window, as in Grafana;
+    // Dragging across the plot zooms the page to that window;
     // a double click zooms back out.
     cursor: { points: { size: 8 }, drag: { x: true, y: false, setScale: false } },
     select: { show: true },
@@ -1115,8 +1114,7 @@ function drawChart(metric, data) {
 const TIP_ROWS = 12;
 
 // tooltip shows, at the cursor, the time and each line's name and value,
-// highest first, with the line nearest the cursor in bold: Grafana's
-// "all series" tooltip.
+// highest first, with the line nearest the cursor in bold.
 function tooltip(looks, spec) {
   let tip;
   return {

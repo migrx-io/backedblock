@@ -87,7 +87,7 @@ Each of these fixed a real bug or review finding. Keep them.
   go.mod: its deps live in ours, and `github.com/twinj/uuid` is pinned to a
   pre-v1 pseudo-version that it needs. Don't bump it.
 - **`bbctl ui` shows only what Prometheus holds**, the data behind the
-  mgx-metrics Grafana dashboards; the gateway (:8082) only checks the login.
+  mgx-metrics dashboards; the gateway (:8082) only checks the login.
   With mgmt, its Prometheus has every pool (filter `pool="x"`); without it,
   each pool's own. The page sends view and chart names, never PromQL.
 - **`bbctl ui` forwards through child processes.** The Session Manager code
@@ -98,8 +98,10 @@ Each of these fixed a real bug or review finding. Keep them.
 - **The management plane is explicit.** It's added by `config create` (asked
   when the workload needs several pools; yes by default, `--mgmt=false` to
   skip) or `pool add --with-mgmt`, never by other commands. Several pools without mgmt is
-  a valid layout: independent pools, each with its own API and Grafana.
-  `cross_peer_scrape` and the pools' Grafana follow whether `mgmt` exists.
+  a valid layout: independent pools, each with its own API and metrics.
+  `cross_peer_scrape` follows whether `mgmt` exists.
+- **Rewriting the node secret keeps keys bbctl doesn't generate.** Older
+  node images read keys that are no longer generated.
 
 ## Develop
 

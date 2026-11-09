@@ -226,7 +226,7 @@ details.members ul { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); f
 .host-head { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 16px; }
 .host-head h2 { margin: 0; font-size: 18px; }
 
-/* Grafana-style rows: a heading that folds its panels away. */
+/* Collapsible rows: a heading that folds its panels away. */
 details.row { margin-bottom: 8px; }
 details.row > summary {
   cursor: pointer; user-select: none; font-weight: 600; font-size: 14px;

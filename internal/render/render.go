@@ -246,7 +246,6 @@ func poolModule(c *config.Config, p *config.Pool) (obj, []string) {
 		"s3_bucket_access_names": nonNil(p.S3BucketAccess),
 		"s3_force_destroy":       p.S3ForceDestroy,
 		"enable_metrics":         p.EnableMetrics,
-		"enable_grafana":         p.EnableGrafana,
 		// A standalone pool scrapes every peer for a full metrics replica; under
 		// a mgmt plane each node scrapes itself and mgmt federates them.
 		"cross_peer_scrape": c.Mgmt == nil,
@@ -272,7 +271,6 @@ func mgmtModule(c *config.Config) (obj, []string) {
 		"nodes_instance_type": g.InstanceType,
 		"nodes_count":         g.NodesCount,
 		"enable_metrics":      g.EnableMetrics,
-		"enable_grafana":      g.EnableGrafana,
 		"provision_mode":      "ssm",
 		"secrets_ssm_path":    c.SecretsSSMPath,
 	}

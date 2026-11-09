@@ -190,7 +190,7 @@ The same stack runs on both roles; only the plugin set differs.
 
 A node can be started with the metrics feature enabled (`enable_metrics`), which
 brings up Prometheus on the node to collect and aggregate metrics from core and
-its plugins. `enable_grafana` adds Grafana on the cluster's VIP node.
+its plugins. `bbctl ui` shows that data in your browser.
 
 ---
 
@@ -237,7 +237,7 @@ and leaves AWS alone, so `bbctl destroy NAME` first if it's deployed.
 A workload too big for one pool gets several identical pools. Add more with
 `bbctl pool add prod pool2`, then `bbctl apply prod`:
 - **Without a management plane**, each pool is independent, with its own API
-  endpoints and Grafana.
+  endpoints and metrics.
 - **With one**, it presents one API for every pool and federates their
   metrics. `config create` asks whether to add it when there are several
   pools (`--mgmt` or `--mgmt=false` answers ahead), and `pool add --with-mgmt`
@@ -258,7 +258,7 @@ Commands:
 | `bbctl connect NAME [--forward [LOCAL:]REMOTE]` | interactive shell or port forward via Session Manager, built in |
 | `bbctl cli NAME [--pool POOL] [--node N]` | `mgx-cli` on a management node (or, without one, a pool node) over Session Manager, with `login admin --cluster <cluster> --ns <cluster>` already entered |
 | `bbctl sc NAME` | print the helm command that installs the CSI driver for this storage: API nodes, login, and the pool's `storage_class:` cache sizes and QoS caps |
-| `bbctl ui NAME [--pool POOL]` | a dashboard in the browser with the data of the Grafana dashboards (overview, hosts with their node_exporter metrics, cache, volumes, snapshots), filtered by pool |
+| `bbctl ui NAME [--pool POOL]` | a dashboard in the browser with the cluster's metrics (overview, hosts with their node_exporter metrics, cache, volumes, snapshots), filtered by pool |
 | `bbctl secrets get\|list\|set\|generate\|delete NAME` | the node secrets in SSM, e.g. `get NAME MGX_GW_ADMIN_PASSWD` for `mgx-cli` |
 | `bbctl version` | bbctl, Terraform and module versions |
 
@@ -291,13 +291,8 @@ hand, it is `bbctl connect prod`, then `mgx-cli` and the same `login`.
 Every command set (nodes, pools, volumes, snapshots) is documented in the
 [CLI reference](https://backedblock.io/docs/cli).
 
-**Grafana** (when `enable_grafana` is on) runs on the cluster's VIP node, and the
-VIP can move. Run `cluster list` in mgx-cli. `vip_host.ip` is the node that
-currently holds it. Match that IP against `bbctl status prod`, then forward the port:
-
-```bash
-bbctl connect prod --node i-0123456789abcdef0 --forward 3000   # http://localhost:3000
-```
+**Metrics:** `bbctl ui prod` opens a dashboard of the cluster in your browser,
+read from its Prometheus over Session Manager.
 
 ### Requirements
 

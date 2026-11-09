@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// The Volumes view: the mgx-metrics "Storage" Grafana dashboard. The storage
+// The Volumes view: the mgx-metrics "Storage" dashboard. The storage
 // plugin publishes each volume's record as labels on storage_volume_status,
 // valued 1 when the volume is READY. The query is the dashboard's: topk by
 // name keeps only the newest label set, since a changed label (a new status,

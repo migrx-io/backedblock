@@ -244,7 +244,6 @@ func (a *app) runConfigCreate(cmd *cobra.Command, name string, o configOpts) err
 		p.RCacheSizeInMiB, p.RWCacheSizeInMiB = sized.RCacheSizeInMiB, sized.RWCacheSizeInMiB
 		p.EBSVolumes = sized.EBSVolumes
 		p.StorageClass = maps.Clone(sc.Parameters)
-		p.EnableGrafana = mgmt == nil
 		cfg.Pools = append(cfg.Pools, p)
 	}
 

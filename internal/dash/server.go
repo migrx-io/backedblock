@@ -1,6 +1,6 @@
 // Package dash is the local dashboard behind `bbctl ui`: a web server on
 // 127.0.0.1 that shows what the clusters' Prometheus holds, the data behind
-// the mgx-metrics Grafana dashboards. The cluster API is used only to check
+// the mgx-metrics dashboards. The cluster API is used only to check
 // the login. Both are reached through SSM port forwards that the caller sets
 // up; nothing comes from bbctl's config or AWS.
 package dash

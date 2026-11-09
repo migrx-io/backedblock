@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// The Hosts view is the "Node Exporter Full" Grafana dashboard: one node at a
+// The Hosts view is the "Node Exporter Full" dashboard: one node at a
 // time (hostpanels.go). Through the management plane node_exporter's series
 // carry the pool and node=<ip>; a pool's own Prometheus scrapes <ip>:9100.
 // scrapedHost reads either.

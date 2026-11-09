@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 
@@ -184,12 +185,7 @@ func (a *app) secretsListCmd() *cobra.Command {
 }
 
 func validKey(k string) bool {
-	for _, s := range awsx.SecretKeys {
-		if s == k {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(awsx.SecretKeys, k)
 }
 
 func (a *app) secretsDeleteCmd() *cobra.Command {

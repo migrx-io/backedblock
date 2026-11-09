@@ -40,7 +40,7 @@ func DefaultPool(deployment, account, name, az string) Pool {
 
 // DefaultMgmt is a 3-node management plane.
 func DefaultMgmt() *Mgmt {
-	return &Mgmt{NodesCount: DefaultNodesCount, InstanceType: DefaultMgmtType, EnableMetrics: true, EnableGrafana: true}
+	return &Mgmt{NodesCount: DefaultNodesCount, InstanceType: DefaultMgmtType, EnableMetrics: true}
 }
 
 // StateBucketName is the default Terraform state bucket for a deployment.

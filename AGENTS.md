@@ -59,7 +59,7 @@ no dedicated field go under a pool's `extra:` map, for example
 
 - Add a pool: `bbctl pool add <name> <pool> [--az <az>]`, then `apply`. Without a
   management plane each pool is independent, with its own API endpoints and
-  Grafana. `--with-mgmt` adds a management plane in front of all pools; after
+  metrics. `--with-mgmt` adds a management plane in front of all pools; after
   that apply, the CSI driver points at the mgmt nodes.
 - Remove a pool: `bbctl pool remove <name> <pool> --auto-approve`. This **deletes its buckets
   and data**.

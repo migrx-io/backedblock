@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// The Snapshots view: the mgx-metrics "Snapshot" Grafana dashboard. The
+// The Snapshots view: the mgx-metrics "Snapshot" dashboard. The
 // snapshot plugin publishes each snapshot's record as labels on
 // snapshot_status, and its transfer stats as one series each. As for
 // volumes, topk keeps only a snapshot's newest label set.
